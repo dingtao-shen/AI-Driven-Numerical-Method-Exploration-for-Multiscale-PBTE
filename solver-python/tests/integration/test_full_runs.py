@@ -103,14 +103,24 @@ def test_cis_mass_approaches_the_diffusion_limit():
         prev = rec.mass
 
 
-def test_gsis_mass_is_close_but_not_convergent():
-    """GSIS stays within 2e-4 of the diffusion limit at every Kn, which is
-    useful as a sanity band -- but see the previous test for why it is stated
-    as a bound rather than as convergence."""
+def test_gsis_mass_tracks_cis_not_the_diffusion_limit():
+    """GSIS's `int T dA` must be judged against CIS at the same Kn, not
+    against the diffusion limit.
+
+    Comparing to 0.25 conflates two different things.  At `tau_R = 1` the
+    kinetic answer genuinely is not 0.25 -- both schemes give 0.249687, and
+    the 3.1e-4 shortfall is physics, not error.  What is worth bounding is how
+    far GSIS lands from CIS, which is the fixed-point gap of
+    docs/FORTRAN_ISSUES.md #5, and that shrinks as Kn falls.
+    """
+    gaps = {}
     for tau_r in (1.0, 1e-1, 1e-2):
-        rec = Solver(_case(tau_r=tau_r, accflag=1)).run()
-        assert rec.converged
-        assert abs(rec.mass - 0.25) < 2e-4
+        cis = Solver(_case(tau_r=tau_r, accflag=0)).run()
+        gsis = Solver(_case(tau_r=tau_r, accflag=1)).run()
+        assert cis.converged and gsis.converged
+        gaps[tau_r] = abs(gsis.mass - cis.mass)
+        assert gaps[tau_r] < 1e-3, f"tau_R={tau_r:g}: gap {gaps[tau_r]:.2e}"
+    assert gaps[1e-2] < gaps[1e-1], f"gap should shrink with Kn: {gaps}"
 
 
 def test_run_record_is_complete():

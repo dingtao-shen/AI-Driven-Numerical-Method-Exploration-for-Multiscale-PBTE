@@ -111,9 +111,9 @@ Verified against the Fortran on every stage of every iteration
 
 `VALIDATION.md` has the full §6.5 sweep.
 
-## Two things you should know before trusting a result
+## Three things you should know before trusting a result
 
-Both are documented in full in **`docs/FORTRAN_ISSUES.md`**.
+All are documented in full in **`docs/FORTRAN_ISSUES.md`**.
 
 **1. The reference's GSIS path is unusable as shipped.** `Init_Acceleration_New`
 uses `AA_TMP` uninitialised; the six off-diagonal blocks it never writes hold
@@ -134,6 +134,16 @@ load-bearing property for the whole benchmark"; **it does not hold**, and
 anything built on this solver needs to grade against the true residual and the
 analytic limit instead. `tools/fixed_point_study.py` reproduces the
 measurement.
+
+**3. Two boundary branches in the reference are unreachable, and both are
+broken.** `Solvers.f90` treats every wall as thermalising, so the periodic and
+adiabatic paths never execute there and have never been exercised. Both fail
+when they are: the HDG assembly ignores that a periodic pair's trace bases are
+mirrored, and the adiabatic wall's tangential flux projection is commented out
+in variant A, which sends GSIS to `1e77` within 300 iterations. `pybte` fixes
+both — the periodic channel is then `x`-independent to `1e-5`, and the
+adiabatic cavity converges to `int T dA = 0.5000000` with the net normal flux
+through each adiabatic face vanishing to `5e-14`.
 
 ## Configuration
 

@@ -168,21 +168,30 @@ class GlobalSolver:
                     ffa[nf:2 * nf, th] = mom[k_th, nf:2 * nf].T
                     ffa[2 * nf:3 * nf, th] = mom[k_th, 2 * nf:3 * nf].T
 
-            # Adiabatic wall.  Variant B projects the imposed heat flux onto
-            # the wall tangent (n.q_hat = 0 exactly); variant A imposes the
-            # unrotated DVM flux.
+            # Adiabatic wall: project the imposed trace heat flux onto the
+            # wall tangent, q_hat = (I - n n^T) q, so that n.q_hat = 0.
+            #
+            # This is unconditional, and it is a deviation from variant A.
+            # The reference has the projection written out but commented out
+            # there (it is live in variant B), so variant A imposes the raw
+            # DVM flux -- a trace with a non-zero normal component at a wall
+            # that is by definition adiabatic.  The inconsistency is not
+            # cosmetic: with the raw flux, GSIS on the adiabatic cavity
+            # diverges to 1e77 within 300 iterations; with the projection it
+            # converges in 30 to int T dA = 0.5000000, the exact 1-D answer.
+            #
+            # Nothing is lost by fixing it, because the reference cannot
+            # reach this path at all: Solvers.f90 treats every wall as
+            # thermalising, so BC_TYP=2 never occurs in a working run.
+            # See docs/FORTRAN_ISSUES.md #9.
             if ad.size:
                 ffa[0:nf, ad] = mom[k_ad, 0:nf].T / self.cv
                 qxb = mom[k_ad, nf:2 * nf].T
                 qyb = mom[k_ad, 2 * nf:3 * nf].T
-                if self.variant == "B":
-                    nx = self.wall_nx[k_ad]
-                    ny = self.wall_ny[k_ad]
-                    ffa[nf:2 * nf, ad] = qxb * (ny * ny) - qyb * (nx * ny)
-                    ffa[2 * nf:3 * nf, ad] = -qxb * (nx * ny) + qyb * (nx * nx)
-                else:
-                    ffa[nf:2 * nf, ad] = qxb
-                    ffa[2 * nf:3 * nf, ad] = qyb
+                nx = self.wall_nx[k_ad]
+                ny = self.wall_ny[k_ad]
+                ffa[nf:2 * nf, ad] = qxb * (ny * ny) - qyb * (nx * ny)
+                ffa[2 * nf:3 * nf, ad] = -qxb * (nx * ny) + qyb * (nx * nx)
         return ffa
 
     # -- solve -------------------------------------------------------------

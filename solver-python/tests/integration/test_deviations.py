@@ -44,23 +44,38 @@ def test_thermalising_is_unchanged_by_the_dispatch():
 
 
 @pytest.mark.slow
-def test_nonthermalising_wall_conserves_energy():
-    """A diffusely reflecting wall emits exactly what makes its net normal
-    heat flux vanish, so the flux through it must be zero to round-off --
-    not merely to discretisation error."""
-    s = Solver(_case("cavity_adiabatic_gsis.yaml"))
-    s.run()
+@pytest.mark.parametrize("accflag", [0, 1])
+def test_nonthermalising_wall_conserves_energy(accflag):
+    """§7.1: a diffusely reflecting wall emits exactly what makes its own net
+    normal heat flux vanish, so that flux must be zero to *round-off* -- the
+    emission is constructed from the balance, not approximated.
+
+    Both schemes, because the two failure modes are different: the kinetic
+    boundary condition lives in the sweep, the macroscopic trace condition in
+    the HDG right-hand side.  GSIS needs the tangential projection of the
+    trace flux to be stable at all (docs/FORTRAN_ISSUES.md #9).
+    """
+    s = Solver(_case("cavity_adiabatic_gsis.yaml", **{"scheme.accflag": accflag}))
+    rec = s.run()
+    assert rec.converged
+
     q = boundary_heat_flux(s)
     codes = s.bcdata.bc_type[np.clip(s.mesh.face_bc, 0, None)]
     adiabatic = (s.mesh.face_bc >= 0) & (codes == 2)
     thermalising = (s.mesh.face_bc >= 0) & (codes == 1)
     scale = np.abs(q[thermalising]).max()
 
-    assert np.abs(q[adiabatic]).max() < 1e-10 * scale, (
-        f"adiabatic faces leak {np.abs(q[adiabatic]).max():.3e} "
-        f"against a wall-flux scale of {scale:.3e}")
-    # and the two active walls balance: what enters the hot wall leaves the cold
-    assert abs(q.sum()) < 1e-8 * scale
+    leak = np.abs(q[adiabatic]).max() / scale
+    assert leak < 1e-10, f"adiabatic faces leak {leak:.2e} relative"
+
+    # The hot and cold walls balance only to discretisation and to whatever
+    # tolerance the run stopped at -- unlike the adiabatic condition, global
+    # conservation is not built into the scheme.
+    assert abs(q.sum()) / scale < 1e-3
+
+    # T = 0 on one wall, 1 on the opposite, adiabatic sides: the problem is
+    # one-dimensional and antisymmetric, so int T dA is exactly 1/2.
+    assert rec.mass == pytest.approx(0.5, abs=1e-4)
 
 
 @pytest.mark.slow

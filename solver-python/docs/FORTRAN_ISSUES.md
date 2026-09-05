@@ -19,9 +19,10 @@ listed below.
 | 6 | **design** | `Synthetic_Acceleration1.f90` | `scheme.acc_variant: B` |
 | 7 | correctness | `Solvers.f90` | see §7.1 of the proposal |
 | 8 | correctness | `Synthetic_Acceleration.f90` | fixed; no switch |
-| 9 | determinism | `Velocity_Distribution.f90` | `restart.error_on_stale` |
-| 10 | performance | `Synthetic_Acceleration.f90` | fixed; no switch |
-| 11 | robustness | `Matrix.f90` | `scheme.on_cycle` |
+| 9 | **correctness** | `Synthetic_Acceleration.f90` | fixed; no switch |
+| 10 | determinism | `Velocity_Distribution.f90` | `restart.error_on_stale` |
+| 11 | performance | `Synthetic_Acceleration.f90` | fixed; no switch |
+| 12 | robustness | `Matrix.f90` | `scheme.on_cycle` |
 
 ---
 
@@ -264,7 +265,44 @@ CIS on the same mesh gives `T` constant along `x` to `4e-8`.
 the permutation in both the matrix and the right-hand side. After the fix the
 `x`-variation drops to `1.1e-5` at `tau_R = 1e-2`.
 
-## 9. The restart file is read silently
+## 9. The adiabatic wall's macroscopic trace flux is not projected
+
+Found while testing §7.1, and latent in the reference for the same reason as
+#8: `Solvers.f90` treats every wall as thermalising, so `BC_TYP = 2` never
+occurs in a working run and this path is never executed.
+
+An adiabatic wall is defined by `n . q = 0`. `Global_Problem_Solver_ACC`
+imposes the macroscopic trace heat flux there from the kinetic solution, and
+the tangential projection that would enforce the condition is written out --
+but commented out in variant A:
+
+```fortran
+FFA(M+  NDOF_FC+(I-1)*3*NDOF_FC) = qxbc !qxbc*ny*ny - qybc*nx*ny
+FFA(M+2*NDOF_FC+(I-1)*3*NDOF_FC) = qybc !-qxbc*nx*ny + qybc*nx*nx
+```
+
+Variant B has the same two lines with the projection *live*. So variant A
+imposes the raw DVM flux, a trace with a non-zero normal component at a wall
+that is by definition adiabatic.
+
+The inconsistency is not cosmetic. On the adiabatic cavity at `tau_R = 1e-1`:
+
+| | iterations | converged | `int T dA` |
+|---|---|---|---|
+| raw flux, as variant A ships | 300 (capped) | no | -3.8e+77 |
+| tangential projection restored | 30 | yes | 0.5000000 |
+
+0.5 is the exact answer: with `T = 0` on one wall, `T = 1` on the opposite one
+and the sides adiabatic, the problem is one-dimensional and antisymmetric.
+
+`pybte` applies the projection `q_hat = (I - n n^T) q` unconditionally, for
+both variants. Nothing is lost by doing so, because there is no reference
+behaviour to reproduce -- the branch is unreachable in the Fortran. The
+kinetic side needs no such fix: CIS with adiabatic walls converges on its own
+to `int T dA = 0.49995`, and the net normal flux through each adiabatic face
+vanishes to round-off.
+
+## 10. The restart file is read silently
 
 `Init_Velocity_Distribution_Function` opens `VDF<P..T..NP..NA..>.out` and, if
 it exists, uses it as the initial condition with only a line on stdout. A
@@ -276,7 +314,7 @@ that grades on iteration counts.
 SHA-256 in the run record, and **errors** if a restart file is present while
 restart is disabled (proposal §7.3).
 
-## 10. Global assembly is quadratic in face count
+## 11. Global assembly is quadratic in face count
 
 `Init_Acceleration_New` zeroes the dense row-block workspace
 `KKA(3*NDOF_FC, N_FCS*3*NDOF_FC)` inside the loop over faces, and then scans
@@ -288,7 +326,7 @@ and emits COO triplets directly, which is linear (proposal §7.4). The
 resulting matrix matches the Fortran CSR to `1.5e-15` relative with identical
 sparsity (213 760 nonzeros on the shipped case).
 
-## 11. `Init_Triangle_Order` has no cycle detection
+## 12. `Init_Triangle_Order` has no cycle detection
 
 The topological sort loops
 

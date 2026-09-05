@@ -69,6 +69,12 @@ def boundary_heat_flux(solver) -> np.ndarray:
     loose one -- it should return zero to round-off, not to discretisation
     error.
 
+    The diffuse emission is recomputed from the *current* distribution before
+    measuring.  The solver caches it from the start of the last step, one
+    sweep stale, which on a converged run shows up as a spurious 1e-6
+    imbalance -- an artefact of when the cache was filled, not of the boundary
+    condition.
+
     Returns
     -------
     (n_faces,) array; entries for interior faces are zero.
@@ -81,6 +87,7 @@ def boundary_heat_flux(solver) -> np.ndarray:
     fcm = solver.integrals.int_tri_fc                # (I, IL, M, L)
     out = np.zeros(m.n_faces)
     bd = solver.bcdata
+    bd.update_wall_flux(solver.vdf, ctx.cxv, ctx.cyv, ctx.domega, fcm, m)
 
     for f in range(m.n_faces):
         bc = int(m.face_bc[f])
@@ -97,7 +104,10 @@ def boundary_heat_flux(solver) -> np.ndarray:
 
         typ = bd.bc_type[bc]
         if typ == BC_NONTHERMALISING:
-            emitted = float(bd.flux_wall[f].sum())          # oint f_w ds
+            # FLUX_WALL stores -f_w, not f_w: its numerator is accumulated
+            # against the *inward* normal, which flips the sign.  The sweep
+            # restores it with ``FW = -FLUX_WALL`` and so must this.
+            emitted = -float(bd.flux_wall[f].sum())         # oint f_w ds
         elif typ == BC_THERMALISING:
             emitted = cv / 4.0 / PI * bd.bc_temp[bc] * float(m.face_len[f])
         else:                                                # periodic
