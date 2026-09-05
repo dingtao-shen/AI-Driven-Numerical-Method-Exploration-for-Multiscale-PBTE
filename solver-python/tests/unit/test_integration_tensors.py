@@ -5,9 +5,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pybte.basis import build_basis, eval_tri_basis
+from pybte.basis import eval_tri_basis
 from pybte.integration import build_integrals, fac_div
-from pybte.quadrature import gauss_legendre, tri_quadrature
+from pybte.quadrature import tri_quadrature
 
 
 @pytest.fixture(scope="module")

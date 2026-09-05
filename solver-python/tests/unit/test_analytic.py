@@ -4,9 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pybte.analytic import (analytic_fields, fourier_flux, fourier_temperature,
-                            l2_error)
-from pybte.constants import PI
+from pybte.analytic import fourier_flux, fourier_temperature, l2_error
 
 
 def test_boundary_values():

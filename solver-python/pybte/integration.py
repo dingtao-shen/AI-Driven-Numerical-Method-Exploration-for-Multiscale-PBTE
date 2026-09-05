@@ -206,7 +206,6 @@ def build_integrals(mesh: Mesh, basis: Basis, np_tri: int, np_fc: int,
     Cf = basis.nodfun_fc
     nodes = mesh.nodes
     n_tris = mesh.n_tris
-    n_faces = mesh.n_faces
     area2 = 2.0 * mesh.tri_area
 
     ix = mono[:, 0]

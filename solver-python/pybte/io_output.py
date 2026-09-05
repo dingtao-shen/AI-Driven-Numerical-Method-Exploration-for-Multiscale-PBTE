@@ -178,19 +178,19 @@ def locate_points(mesh, px, py):
 
 def sample_fields(mesh, basis, vdf, cxv, cyv, domega, cv, px, py, triid,
                   uq=None, ndof_tri=None):
-    """Evaluate T, qx, qy (and the GSIS stress trio) on the sampling grid."""
-    from .integration import _affine_to_reference, _eval_mono
+    """Evaluate T, qx, qy (and the GSIS stress trio) on the sampling grid.
+
+    Every point is mapped into its own element's reference coordinates and the
+    basis is evaluated there, all at once -- the reference does the same thing
+    one point at a time, which on the 109x109 grid is 11 881 separate basis
+    evaluations.  The arithmetic is identical; only the loop is gone.
+    """
+    from .integration import _affine_to_reference
 
     nxp, nyp = px.size, py.size
-    pT = np.zeros((nxp, nyp))
-    pqx = np.zeros((nxp, nyp))
-    pqy = np.zeros((nxp, nyp))
-    pxx = np.zeros((nxp, nyp))
-    pxy = np.zeros((nxp, nyp))
-    pyy = np.zeros((nxp, nyp))
     nd = basis.ndof_tri if ndof_tri is None else ndof_tri
 
-    # moments of vdf, per element DOF: (n_tris, ndof)
+    # angular moments of the distribution, per element DOF: (n_tris, ndof)
     m0 = np.einsum("d,dil->il", domega, vdf, optimize=True)
     mx = np.einsum("d,dil->il", cxv * domega, vdf, optimize=True)
     my = np.einsum("d,dil->il", cyv * domega, vdf, optimize=True)
@@ -199,25 +199,39 @@ def sample_fields(mesh, basis, vdf, cxv, cyv, domega, cv, px, py, triid,
     ys = mesh.nodes[mesh.tri_nodes, 1]
     (bA, cA, dA), (fE, gE, hE) = _affine_to_reference(xs, ys)
 
-    for i in range(nxp):
-        for j in range(nyp):
-            k = int(triid[i, j])
-            if k < 0:
-                continue
-            xi = bA[k] * px[i] + cA[k] * py[j] + dA[k]
-            eta = fE[k] * px[i] + gE[k] * py[j] + hE[k]
-            pm = _eval_mono(basis.nodfun_tri, basis.mono,
-                            np.array(xi), np.array(eta))
-            pT[i, j] = float(pm @ m0[k]) / cv
-            pqx[i, j] = float(pm @ mx[k])
-            pqy[i, j] = float(pm @ my[k])
-            if uq is not None:
-                pxx[i, j] = float(pm @ (-4.0 / 3.0 * uq[3 * nd:4 * nd, k]
-                                        + 2.0 / 3.0 * uq[6 * nd:7 * nd, k]))
-                pxy[i, j] = float(pm @ (-uq[4 * nd:5 * nd, k]
-                                        - uq[5 * nd:6 * nd, k]))
-                pyy[i, j] = float(pm @ (2.0 / 3.0 * uq[3 * nd:4 * nd, k]
-                                        - 4.0 / 3.0 * uq[6 * nd:7 * nd, k]))
+    X = np.repeat(px, nyp)
+    Y = np.tile(py, nxp)
+    k = triid.reshape(-1)
+    hit = k >= 0
+    kh = k[hit]
+    xi = bA[kh] * X[hit] + cA[kh] * Y[hit] + dA[kh]
+    eta = fE[kh] * X[hit] + gE[kh] * Y[hit] + hE[kh]
+
+    # (n_hit, ndof) -- basis functions of each point's own element
+    phi = np.zeros((kh.size, basis.nodfun_tri.shape[0]))
+    for c, (a, b) in enumerate(basis.mono):
+        phi += basis.nodfun_tri[:, c] * (xi ** float(a) * eta ** float(b))[:, None]
+
+    def gather(coef):
+        out = np.zeros(nxp * nyp)
+        out[hit] = np.einsum("pl,pl->p", phi, coef[kh], optimize=True)
+        return out.reshape(nxp, nyp)
+
+    pT = gather(m0) / cv
+    pqx = gather(mx)
+    pqy = gather(my)
+
+    if uq is None:
+        z = np.zeros((nxp, nyp))
+        return pT, pqx, pqy, z, z.copy(), z.copy()
+
+    lxx = uq[3 * nd:4 * nd, :].T
+    lxy = uq[4 * nd:5 * nd, :].T
+    lyx = uq[5 * nd:6 * nd, :].T
+    lyy = uq[6 * nd:7 * nd, :].T
+    pxx = gather(-4.0 / 3.0 * lxx + 2.0 / 3.0 * lyy)
+    pxy = gather(-lxy - lyx)
+    pyy = gather(2.0 / 3.0 * lxx - 4.0 / 3.0 * lyy)
     return pT, pqx, pqy, pxx, pxy, pyy
 
 

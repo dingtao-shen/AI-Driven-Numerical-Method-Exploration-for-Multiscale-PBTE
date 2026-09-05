@@ -22,7 +22,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ..constants import BC_PERIODIC, BC_SYMMETRY, BC_THERMALISING
+from ..constants import BC_SYMMETRY, BC_THERMALISING
 from .geometry import triangle_geometry
 from .gmsh_reader import LINE_ELEMENT, TRIANGLE_ELEMENT, GmshMesh, read_gmsh22
 

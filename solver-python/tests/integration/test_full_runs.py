@@ -146,3 +146,47 @@ def test_deg_convergence_towards_analytic():
         errs.append(float(np.sqrt(np.mean((tavg - ref)[interior] ** 2))))
     assert errs[2] < errs[0], f"no improvement with DEG: {errs}"
     assert errs[2] < 0.02
+
+
+@pytest.mark.fortran
+@pytest.mark.parametrize("name,accflag", [("fx_cis_1e-1", 0), ("fx_gsis_1e-1", 1)])
+def test_field_output_matches_the_fortran_tecplot_file(name, accflag):
+    """End-to-end: the sampled 109x109 field, against the reference's own
+    Tecplot output.
+
+    The reference prints ``ES16.6`` -- six significant decimals -- so ~5e-8 on
+    values of order 1 *is* exact agreement at the file's precision.  This
+    exercises the whole chain at once: sweep, moments, point location, the
+    reference-coordinate map and the basis evaluation.
+    """
+    import glob
+
+    from pybte.io_output import locate_points, sample_fields, sampling_grid
+
+    files = glob.glob(str(GOLDEN / name / "2D_*.dat"))
+    if not files:
+        pytest.skip(f"no Fortran field output for {name}")
+    ref = np.loadtxt(files[0], skiprows=2)          # x y T qx qy Nxx Nxy Nyy
+
+    c = _case(tau_r=1e-1, accflag=accflag)
+    s = Solver(c)
+    s.run()
+    px, py = sampling_grid()
+    tri = locate_points(s.mesh, px, py)
+    assert not np.any(tri < 0), "sampling points fell outside the mesh"
+
+    uq = s.acc.uq if s.acc is not None else None
+    T, qx, qy, nxx, _, _ = sample_fields(
+        s.mesh, s.basis, s.vdf, s.ctx.cxv, s.ctx.cyv, s.ctx.domega,
+        c.flow.cv, px, py, tri, uq=uq, ndof_tri=s.ndof)
+
+    # the Fortran writes j outer, i inner
+    def unpack(col):
+        return ref[:, col].reshape(py.size, px.size).T
+
+    tol = 1e-7
+    assert np.abs(T - unpack(2)).max() < tol
+    assert np.abs(qx - unpack(3)).max() < tol
+    assert np.abs(qy - unpack(4)).max() < tol
+    if accflag:
+        assert np.abs(nxx - unpack(5)).max() < tol

@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..constants import BC_NONTHERMALISING, BC_PERIODIC, BC_THERMALISING
+from ..constants import BC_PERIODIC, BC_THERMALISING
 
 __all__ = ["build_local_operators", "build_ba_sol", "assemble_global_matrix"]
 

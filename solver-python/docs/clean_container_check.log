@@ -1,0 +1,37 @@
+python 3.11.16
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv
+
+[notice] A new release of pip is available: 24.0 -> 26.2.1
+[notice] To update, run: pip install --upgrade pip
+numba: absent -> pure-python fallback
+deps: numpy 2.4.6 / scipy 1.17.1
+=== GSIS run (python -m pybte) ===
+pybte: A1_Nx6_Ny6.msh  N_TRIS=50 N_FCS=85  DEG=1  NPOLE=4 NAZIM=4
+       scheme=GSIS A  tau_R=1 tau_N=100000 tau_C=0.99999  tol=1e-06
+       setup 0.21s, sweep mode onthefly
+  iterations      14  (converged)
+  residual        9.467215e-07
+  mass (int T dA) 0.271671253422
+  sweeps          14
+  factorisations  11200
+  wall clock      0.655 s  (46.78 ms/iter)
+  wrote run_record   /tmp/out/run_record.json
+  wrote runtime_log  /tmp/out/RunTime.txt
+=== CIS run (console script) ===
+pybte: A1_Nx6_Ny6.msh  N_TRIS=50 N_FCS=85  DEG=1  NPOLE=4 NAZIM=4
+       scheme=CIS  tau_R=1 tau_N=100000 tau_C=0.99999  tol=1e-06
+       setup 0.02s, sweep mode onthefly
+  iterations      16  (converged)
+  residual        6.109127e-07
+  mass (int T dA) 0.274105204885
+  sweeps          16
+  factorisations  12800
+  wall clock      0.700 s  (43.78 ms/iter)
+=== convert control.in ===
+wrote /tmp/conv.yaml
+iteration:
+  tol: 1.0e-08
+  tmax: 8000000
+=== run record ===
+iterations 14 converged True scheme GSIS hash d4b7a7cf83eb
+=== ALL OK ===

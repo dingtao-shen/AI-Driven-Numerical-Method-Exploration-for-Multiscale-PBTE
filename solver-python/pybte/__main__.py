@@ -87,7 +87,7 @@ def _cmd_info(args) -> int:
           f"4pi = {4 * np.pi:.12f})")
     print(f"  operators     {s.ctx.mode}, "
           f"{s.ctx.operator_bytes(s.n_tris, case.ndof_tri) / 1e6:.0f} MB")
-    print(f"boundaries")
+    print("boundaries")
     for b in case.boundaries:
         n = int(np.count_nonzero(s.mesh.face_bc == case.boundaries.index(b)))
         print(f"  {b.name:8s} phyid={b.phyid:3d} type={b.type:16s} "

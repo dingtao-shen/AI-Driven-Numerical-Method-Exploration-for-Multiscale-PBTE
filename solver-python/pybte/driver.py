@@ -28,7 +28,6 @@ import numpy as np
 from .basis import build_basis
 from .bc import build_boundary_data
 from .config import Case
-from .constants import PI
 from .integration import build_integrals
 from .io_output import (RunRecord, append_runtime_log, locate_points,
                         sample_fields, sampling_grid, write_tecplot)

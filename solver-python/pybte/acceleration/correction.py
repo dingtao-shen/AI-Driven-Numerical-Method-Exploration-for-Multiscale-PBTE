@@ -21,8 +21,6 @@ macroscopic values, which is what feeds the next sweep.
 """
 from __future__ import annotations
 
-import numpy as np
-
 from .._numba import njit, prange
 
 __all__ = ["correct_vdf"]

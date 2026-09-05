@@ -76,7 +76,6 @@ def boundary_heat_flux(solver) -> np.ndarray:
     m = solver.mesh
     ctx = solver.ctx
     cv = solver.case.flow.cv
-    nd = solver.ndof
     from .constants import PI
 
     fcm = solver.integrals.int_tri_fc                # (I, IL, M, L)
@@ -109,7 +108,6 @@ def boundary_heat_flux(solver) -> np.ndarray:
 
 
 def build_boundary_data(mesh, boundaries, ndof_tri: int) -> BoundaryData:
-    nbc = len(boundaries)
     bc_type = np.array([b.code for b in boundaries], dtype=np.int32)
     bc_temp = np.array([float(b.temp) for b in boundaries], dtype=np.float64)
     bc_xoff = np.array([float(b.xoff) for b in boundaries], dtype=np.float64)
