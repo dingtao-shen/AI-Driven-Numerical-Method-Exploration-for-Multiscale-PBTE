@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from . import _kernels
+from ._numba import HAVE_NUMBA, set_num_threads
 from .constants import PI
 
 __all__ = ["SweepContext"]
@@ -60,6 +61,7 @@ class SweepContext:
     bc_temp: np.ndarray
     flux_wall: np.ndarray
     mode: str = "precomputed"
+    kernel: str = "numba"
     lu: np.ndarray | None = field(default=None, repr=False)
     piv: np.ndarray | None = field(default=None, repr=False)
     sweep_count: int = 0
@@ -90,12 +92,16 @@ class SweepContext:
             bc_type=bcdata.bc_type, bc_temp=bcdata.bc_temp,
             flux_wall=bcdata.flux_wall,
         )
+        set_num_threads(case.performance.threads)
+        ctx.kernel = case.performance.kernel if HAVE_NUMBA else "numpy"
+
         if precompute is None:
             precompute = case.performance.precompute_inverse
         nbytes = ctx.operator_bytes(mesh.n_tris, case.ndof_tri)
-        if precompute and nbytes <= max_bytes:
+        if precompute and nbytes <= max_bytes and ctx.kernel == "numba":
             ctx.factorise()
         else:
+            # the numpy reference kernel builds its own operators inline
             ctx.mode = "onthefly"
         return ctx
 
@@ -120,6 +126,12 @@ class SweepContext:
     # -- the sweep ---------------------------------------------------------
     def sweep(self, mom, vdf) -> None:
         """One transport sweep, in place on ``vdf`` (ndir, n_tris, ndof)."""
+        if self.kernel == "numpy":
+            from .sweep_reference import sweep_reference
+
+            sweep_reference(self, mom, vdf)
+            self.sweep_count += 1
+            return
         if self.mode == "precomputed":
             _kernels.sweep_precomputed(
                 self.order, self.cxv, self.cyv, self.cv, self.vg,

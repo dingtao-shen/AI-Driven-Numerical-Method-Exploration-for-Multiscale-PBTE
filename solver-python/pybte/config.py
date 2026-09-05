@@ -158,13 +158,31 @@ class Output:
 
 @dataclass
 class Performance:
-    #: precompute inv(A_SOL) for every (element, direction) pair (Phase 5.1)
+    """Storage and kernel choices.  None of these changes a single bit of the
+    answer -- they are checked by ``tests/unit/test_sweep_kernels.py``."""
+
+    #: LU-factorise A_SOL once per (element, direction) instead of every
+    #: iteration.  Costs N_TRIS*NDIR*NDOF^2*8 bytes (128 MB on the shipped
+    #: case); turn it off for large meshes.
     precompute_inverse: bool = True
-    #: "numba" (default when available) or "numpy" (the reference kernel)
+    #: "numba" -- the jitted sweep; "numpy" -- ``sweep_reference``, which is
+    #: orders of magnitude slower and exists to pin down what the jitted
+    #: kernels must reproduce.  Falls back to "numpy" if numba is absent.
     kernel: str = "numba"
-    #: threads for the numba sweep; 1 keeps the sweep bit-reproducible.
-    #: The sweep is order-independent across directions, so >1 is safe.
-    threads: int = 1
+    #: Threads for the jitted sweep.  Directions are independent, so any
+    #: value gives identical results; the default of 0 means "let numba
+    #: decide" (all cores).  Set it to 1 to leave the machine free, or when
+    #: several solvers run side by side and would otherwise oversubscribe.
+    threads: int = 0
+
+    def __post_init__(self):
+        self.precompute_inverse = bool(self.precompute_inverse)
+        self.kernel = str(self.kernel).lower()
+        if self.kernel not in ("numba", "numpy"):
+            raise ValueError("performance.kernel must be 'numba' or 'numpy'")
+        self.threads = int(self.threads)
+        if self.threads < 0:
+            raise ValueError("performance.threads must be >= 0")
 
 
 @dataclass

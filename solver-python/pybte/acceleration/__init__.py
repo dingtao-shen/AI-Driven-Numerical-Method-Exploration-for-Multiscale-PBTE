@@ -120,28 +120,19 @@ class Acceleration:
         return np.transpose(self.ba_sol, (2, 3, 1, 0))
 
     def condition_estimate(self) -> float:
-        """1-norm condition estimate of the global matrix (§7.2 comparison)."""
-        from scipy.sparse.linalg import onenormest
+        """1-norm condition estimate of the global trace matrix.
 
-        Kn = onenormest(self.K)
-        try:
-            inv_est = onenormest(self.gsolver._lu.__class__ and _InvOp(self.gsolver._lu,
-                                                                      self.K.shape[0]))
-        except Exception:  # pragma: no cover
-            return float("nan")
-        return float(Kn * inv_est)
+        Used to compare the two acceleration variants (§7.2): they are
+        algebraically the same system and differ only in conditioning as
+        ``TAU_R -> 0``.  Both factors are Higham-Tisseur estimates, so this is
+        an estimate of a bound, not the condition number itself.
+        """
+        from scipy.sparse.linalg import LinearOperator, onenormest
 
-
-class _InvOp:
-    """Minimal LinearOperator-ish wrapper so ``onenormest`` can hit ``A^-1``."""
-
-    def __init__(self, lu, n):
-        from scipy.sparse.linalg import LinearOperator
-
-        self._op = LinearOperator((n, n), matvec=lu.solve,
-                                  rmatvec=lambda b: lu.solve(b, "T"), dtype=float)
-        self.shape = (n, n)
-        self.dtype = float
-
-    def __getattr__(self, k):
-        return getattr(self._op, k)
+        if self.gsolver._lu is None:
+            self.gsolver.factorise()
+        lu = self.gsolver._lu
+        n = self.K.shape[0]
+        inv = LinearOperator((n, n), dtype=float, matvec=lu.solve,
+                             rmatvec=lambda b: lu.solve(b, "T"))
+        return float(onenormest(self.K) * onenormest(inv))

@@ -130,3 +130,41 @@ print(json.dumps({"numba": HAVE_NUMBA, "iters": r.iterations, "mass": r.mass}))
     assert slow["numba"] is False
     assert slow["iters"] == fast["iters"]
     assert slow["mass"] == fast["mass"], "pure-python path disagrees with the jitted one"
+
+
+def test_performance_settings_change_nothing_numerically():
+    """`performance` selects storage and kernels, never physics.  All three
+    settings must give identical answers, or the field is a trap."""
+    from pybte._numba import HAVE_NUMBA
+
+    def run(**perf):
+        c = Case.from_yaml(CASES / "cavity_tauR1e-3_cis.yaml")
+        c.flow.tau_r = 1.0
+        c.velmesh.npole, c.velmesh.nazim, c.dg.deg = 6, 8, 1
+        c.iteration.tmax = 12
+        c.output.field = c.output.run_record = c.output.runtime_log = False
+        for k, v in perf.items():
+            setattr(c.performance, k, v)
+        s = Solver(c)
+        return s, s.run()
+
+    base_s, base = run()
+    for perf in ({"precompute_inverse": False},
+                 {"threads": 1},
+                 {"kernel": "numpy"}):
+        s, rec = run(**perf)
+        assert np.array_equal(rec.residual_history, base.residual_history), perf
+        assert np.array_equal(rec.temp, base.temp), perf
+
+    # ... and the settings actually took effect
+    assert run(precompute_inverse=False)[0].ctx.mode == "onthefly"
+    assert run(kernel="numpy")[0].ctx.kernel == "numpy"
+    if HAVE_NUMBA:
+        assert base_s.ctx.kernel == "numba"
+
+
+def test_performance_rejects_nonsense():
+    with pytest.raises(ValueError, match="kernel"):
+        Case.from_dict({"performance": {"kernel": "cuda"}})
+    with pytest.raises(ValueError, match="threads"):
+        Case.from_dict({"performance": {"threads": -4}})

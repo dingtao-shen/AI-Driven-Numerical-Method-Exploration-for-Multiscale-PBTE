@@ -183,7 +183,7 @@ def write_markdown(rows, out: Path, quick: bool):
             L.append(
                 f"| {r['tau_r']:.0e} | {r['tau_n']:.0e} | {r['deg']} | "
                 f"{r['npole']}x{r['nazim']} | {r['scheme']} | {r['iterations']} | "
-                f"{'yes' if r['converged'] else '**no (TMAX)**'} | "
+                f"{'yes' if r['converged'] else '**no (truncated)**'} | "
                 f"{r['mass']:.8f} | {r['true_residual']:.2e} | {r['wall']:.1f} | {v} |")
         return L + [""]
 
@@ -282,10 +282,33 @@ def main(argv=None) -> int:
     p.add_argument("--out", default=str(ROOT / "VALIDATION.md"))
     p.add_argument("--json", default=str(ROOT / "docs" / "validation_sweep.json"))
     p.add_argument("--quick", action="store_true")
+    p.add_argument("--fill-skipped", type=int, default=0, metavar="TMAX",
+                   help="re-run only the cells a previous --quick sweep skipped, "
+                        "capped at TMAX iterations, and merge them into the "
+                        "existing JSON.  Cells that hit the cap are recorded as "
+                        "truncated, which is the point: CIS at small tau_R is "
+                        "not expected to converge.")
     args = p.parse_args(argv)
 
     t0 = time.time()
-    rows = sweep(args.quick)
+    if args.fill_skipped:
+        rows = json.loads(Path(args.json).read_text())
+        for i, r in enumerate(rows):
+            if not r.get("skipped"):
+                continue
+            print(f"  filling tau_R={r['tau_r']:.0e} {r['scheme']} "
+                  f"(cap {args.fill_skipped} iterations)", flush=True)
+            fresh = run_cell(r["tau_r"], r["tau_n"], r["deg"], r["npole"],
+                             r["nazim"], 0 if r["scheme"] == "CIS" else 1,
+                             args.fill_skipped)
+            fresh["truncated_at"] = args.fill_skipped
+            rows[i] = fresh
+            print(f"    -> {fresh['iterations']} iterations, "
+                  f"{'converged' if fresh['converged'] else 'TRUNCATED'}, "
+                  f"residual {fresh['final_residual']:.2e}, "
+                  f"true {fresh['true_residual']:.2e}", flush=True)
+    else:
+        rows = sweep(args.quick)
     Path(args.json).write_text(json.dumps(rows, indent=2))
     write_markdown(rows, Path(args.out), args.quick)
     print(f"\nwrote {args.out} and {args.json}  ({time.time() - t0:.0f}s total)")

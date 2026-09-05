@@ -242,15 +242,11 @@ def append_runtime_log(path, scheme, tau_r, tau_n, n_tris, npole, nazim,
     ``FORMAT(1X,A4,2ES10.2,3I6,I8,F20.1)``."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    flag = f"{scheme:>4s}"
-
-    def es10_2(v: float) -> str:
-        s = f"{v:10.2E}"
-        # Fortran ES prints 1.00E-03; python gives 1.00E-03 too, but pads
-        # exponents to two digits the same way, so only width differs
-        return s
-
-    line = (f" {flag}{es10_2(tau_r)}{es10_2(tau_n)}"
+    # Fortran ES10.2 and Python's 10.2E agree character for character here:
+    # both give a leading digit, two decimals and a two-digit signed exponent
+    # ("  1.00E-03").  Widths differ only if |exponent| >= 100, which cannot
+    # happen for a relaxation time.
+    line = (f" {scheme:>4s}{tau_r:10.2E}{tau_n:10.2E}"
             f"{n_tris:6d}{npole:6d}{nazim:6d}{step:8d}{seconds:20.1f}\n")
     with path.open("a") as fh:
         fh.write(line)

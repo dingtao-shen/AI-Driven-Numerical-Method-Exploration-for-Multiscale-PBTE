@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import os
 
-__all__ = ["njit", "prange", "HAVE_NUMBA", "numba_available"]
+__all__ = ["njit", "prange", "HAVE_NUMBA", "numba_available",
+           "set_num_threads"]
 
 _DISABLE = os.environ.get("PYBTE_NO_NUMBA", "").strip() not in ("", "0", "false", "False")
 
@@ -41,3 +42,16 @@ except ImportError:  # pragma: no cover
 
 def numba_available() -> bool:
     return HAVE_NUMBA
+
+
+def set_num_threads(n: int) -> int:
+    """Cap the jitted kernels' thread count.  Returns what was actually set.
+
+    ``n = 0`` means "leave numba's default alone".  Numba refuses to raise the
+    count above ``NUMBA_NUM_THREADS``, so we clamp rather than let it raise.
+    """
+    if not HAVE_NUMBA or n <= 0:
+        return 0
+    n = min(int(n), numba.config.NUMBA_NUM_THREADS)
+    numba.set_num_threads(n)
+    return n
