@@ -1,0 +1,15 @@
+# Shipped reference case: unit-square cavity, hot north wall.
+# One-to-one with fortran-reference/.../control.in
+iteration:  {tol: 1.0e-8, tmax: 8000000, true_residual: false}
+scheme:     {accflag: 0}                     # 0 = CIS, 1 = GSIS
+velmesh:    {npole: 20, nazim: 40}
+dg:         {deg: 3}
+flow:       {cv: 1.0, vg: 1.0, tau_r: 1.0e-3, tau_n: 1.0e5, tau_thr: 1.0}
+mesh:       {file: ../meshes/A1_Nx11_Ny11.msh}
+boundaries:
+  - {name: SWall, phyid: 11, type: thermalising, temp: 0.0}
+  - {name: NWall, phyid: 12, type: thermalising, temp: 1.0}
+  - {name: EWall, phyid: 13, type: thermalising, temp: 0.0}
+  - {name: WWall, phyid: 14, type: thermalising, temp: 0.0}
+restart:    {enabled: false, path: null}
+output:     {dir: ../out/cavity_tauR1e-3_cis, field: true, runtime_log: true, run_record: true}

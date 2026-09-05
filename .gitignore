@@ -1,0 +1,22 @@
+# Build products of the Fortran reference.
+# Regenerate: solver-python/tools/build_fortran.sh --variant A|B
+fortran-build/
+fortran-reference/*/bin/
+
+# Golden data from the reference, regenerable by solver-python/tools/make_golden.py.
+# The residual histories, control.in and RunTime.txt are small and *are*
+# committed -- they are what the integration tests compare against.
+# These are not (raw stage snapshots ~600 MB; Tecplot output 1.5 MB apiece):
+fortran-reference/golden/*/dump/
+fortran-reference/golden/*/*.dat
+fortran-reference/golden/*/stdout.log
+fortran-reference/golden/*/*.msh
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+solver-python/out/

@@ -1,0 +1,62 @@
+MODULE VELOCITY_GRID
+!Define velocity mesh
+USE CONSTANT
+USE USER_DEFINE_MATH
+USE GLOBAL_VARIABLE
+IMPLICIT NONE
+
+REAL (KIND=DBL), ALLOCATABLE, DIMENSION(:), SAVE :: THE, PHI, WTHE, WPHI  !discrete velocity and quadrature weight
+REAL (KIND=DBL), ALLOCATABLE, DIMENSION(:,:), SAVE :: DOMEGA, CX, CY          !2D grid
+
+
+CONTAINS
+	SUBROUTINE Init_Velocity_Grid ()
+	IMPLICIT NONE
+	INTEGER :: J1,J2
+	REAL (KIND=DBL), ALLOCATABLE, DIMENSION(:) :: at, wt
+
+	WRITE (*,*)'**** Initial Velocity Mesh ****'
+
+	ALLOCATE (THE(NPOLE),WTHE(NPOLE))
+	ALLOCATE (PHI(NAZIM),WPHI(NAZIM))
+	ALLOCATE (at(NAZIM/2),wt(NAZIM/2))
+	ALLOCATE (DOMEGA(NPOLE,NAZIM),CX(NPOLE,NAZIM),CY(NPOLE,NAZIM))
+
+	THE  = 0.d0
+	WTHE = 0.d0
+	PHI  = 0.d0
+	WPHI = 0.d0
+	DOMEGA = 0.d0
+	CX = 0.d0
+	CY = 0.d0
+
+
+	!Gauss Legendre
+	CALL GaussLegendre(NPOLE,0.d0,PI,THE,WTHE)
+	THE(NPOLE:1:-1)=THE
+	WTHE(NPOLE:1:-1)=WTHE
+
+	at=0.d0
+	wt=0.d0
+	CALL GaussLegendre(NAZIM/2, 0.d0, PI, at, wt)
+	PHI(NAZIM/2:1:-1)=at
+	WPHI(NAZIM/2:1:-1)=wt
+
+	at=0.d0
+	wt=0.d0
+	CALL GaussLegendre(NAZIM/2, PI, 2.d0*PI, at, wt)
+	PHI(NAZIM:NAZIM/2+1:-1)=at
+	WPHI(NAZIM:NAZIM/2+1:-1)=wt
+
+	FORALL(J1=1:NPOLE,J2=1:NAZIM)
+		DOMEGA(J1,J2) = SIN(THE(J1))*WTHE(J1)*WPHI(J2)
+		CX(J1,J2) = Vg*COS(THE(J1))
+		CY(J1,J2) = Vg*SIN(THE(J1))*COS(PHI(J2))
+	END FORALL
+
+	DEALLOCATE (at,wt)
+	WRITE(*,*)
+
+	END SUBROUTINE Init_Velocity_Grid
+
+END MODULE VELOCITY_GRID

@@ -1,0 +1,17 @@
+# Hot north wall, cold south wall, diffusely reflecting (adiabatic) side walls.
+# Exercises the non-thermalising branch of the BC dispatch (§7.1), which is
+# dead code in the Fortran: Calculate_FLUX_WALL exists but is never called.
+# The net normal heat flux through each adiabatic face must vanish.
+iteration:  {tol: 1.0e-8, tmax: 200000}
+scheme:     {accflag: 1}
+velmesh:    {npole: 20, nazim: 40}
+dg:         {deg: 3}
+flow:       {cv: 1.0, vg: 1.0, tau_r: 1.0e-2, tau_n: 1.0e+5, tau_thr: 1.0}
+mesh:       {file: ../meshes/A1_Nx11_Ny11.msh}
+boundaries:
+  - {name: SWall, phyid: 11, type: thermalising,    temp: 0.0}
+  - {name: NWall, phyid: 12, type: thermalising,    temp: 1.0}
+  - {name: EWall, phyid: 13, type: nonthermalising, temp: 0.0}
+  - {name: WWall, phyid: 14, type: nonthermalising, temp: 0.0}
+restart:    {enabled: false}
+output:     {dir: ../out/cavity_adiabatic_gsis, field: true}
