@@ -53,8 +53,7 @@ preserved exactly; only the base changes.
 Note that `INT_NODFUNC_TRI_TRI_X` and `INT_NODFUNC_TRI_TRI` use *different*
 axis orders in the Fortran itself — element index last in one, first in the
 other. That is reproduced rather than tidied up, because the sweep indexes
-both and the mass matrix is only symmetric to `1e-13` (see
-`FORTRAN_ISSUES.md`, "Not defects").
+both and the mass matrix is only symmetric to `1e-13`.
 
 ## Mesh topology
 

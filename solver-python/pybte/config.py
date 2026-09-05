@@ -9,8 +9,6 @@ plus the fields that were implicit in the Fortran and are made explicit here:
 * ``restart``              -- explicit, off by default                [§7.3]
 * ``iteration.true_residual`` -- report a true transport residual too [§7.6]
 * ``performance``          -- storage/kernel choices, no physics
-* ``compat``               -- switches that reproduce Fortran defects exactly,
-                              all defaulting to the corrected behaviour
 """
 from __future__ import annotations
 
@@ -25,8 +23,7 @@ from .constants import (BC_NAME_BY_CODE, BC_TYPE_NAMES, NP_FC_DEFAULT,
                         NP_TRI_BY_DEG)
 
 __all__ = ["Case", "Boundary", "Iteration", "Scheme", "VelMesh", "DG", "Flow",
-           "MeshCfg", "Restart", "Output", "Performance", "Compat",
-           "parse_control_in"]
+           "MeshCfg", "Restart", "Output", "Performance", "parse_control_in"]
 
 
 # --------------------------------------------------------------------------
@@ -187,22 +184,6 @@ class Performance:
             raise ValueError("performance.threads must be >= 0")
 
 
-@dataclass
-class Compat:
-    """Switches that reproduce Fortran defects bit-for-bit.
-
-    All default to the *corrected* behaviour.  See docs/FORTRAN_ISSUES.md.
-    """
-    #: Calculate_Macro_Properties zeroes Qx twice and never zeroes Qy, so the
-    #: cell-average Qy accumulates over iterations.  Qy is dead in the Fortran
-    #: (nothing reads it), but the stage dumps contain it, so we can switch
-    #: the defect on to prove the ports agree.
-    qy_accumulation: bool = False
-    #: Out_Put_Result's analytic heat flux drops the factor 2 from
-    #: d/dx[(2/pi) sum ...]; keep it to reproduce Conduction_A.dat exactly.
-    analytic_flux_half: bool = False
-
-
 # --------------------------------------------------------------------------
 @dataclass
 class Case:
@@ -216,7 +197,6 @@ class Case:
     restart: Restart = field(default_factory=Restart)
     output: Output = field(default_factory=Output)
     performance: Performance = field(default_factory=Performance)
-    compat: Compat = field(default_factory=Compat)
     #: directory that relative paths in this case resolve against
     basedir: str = "."
 
@@ -311,7 +291,6 @@ class Case:
             restart=sub(Restart, "restart"),
             output=sub(Output, "output"),
             performance=sub(Performance, "performance"),
-            compat=sub(Compat, "compat"),
             basedir=basedir,
         )
 

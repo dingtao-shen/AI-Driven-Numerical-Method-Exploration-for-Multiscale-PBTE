@@ -1,8 +1,8 @@
-"""§6.3 integration level: full runs against the Fortran golden logs.
+"""§6.3 integration level: properties of a full run.
 
-Iteration counts must match *exactly*; the converged field to the per-gate
-tolerance.  Where the Fortran log exists these compare against it; the rest
-are self-consistency properties that hold with no Fortran at all.
+Numerical agreement with the Fortran reference is frozen in
+``test_regression.py``; these are the physical and structural properties that
+have to hold on their own.
 """
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import pytest
 
 from pybte import Case, Solver
 
-from ..conftest import CASES, GOLDEN, has_golden
+from ..conftest import CASES
 
 pytestmark = pytest.mark.slow
 
@@ -29,40 +29,6 @@ def _case(tau_r=1e-3, accflag=0, deg=3, tol=1e-8, tmax=8_000_000, mesh=None):
     return c
 
 
-def _golden(name):
-    if not has_golden(name):
-        pytest.skip(f"no Fortran golden run {name}")
-    return np.atleast_2d(np.loadtxt(GOLDEN / name / "residual_history.txt"))
-
-
-@pytest.mark.fortran
-@pytest.mark.parametrize("tau_r,name", [
-    (1.0, "cis_tauR1.0_deg3"),
-    (1e-1, "cis_tauR1e-1_deg3"),
-])
-def test_cis_residual_history_is_bit_identical(tau_r, name):
-    """Gate 3 asks for rtol=1e-10 over 50 iterations; we get bit equality over
-    the whole run, which is a far stronger statement about the port."""
-    ref = _golden(name)
-    rec = Solver(_case(tau_r=tau_r)).run()
-    assert rec.iterations == int(ref[-1, 0])
-    assert np.array_equal(rec.residual_history, ref[:, 1])
-    assert np.array_equal(rec.mass_history, ref[:, 2])
-
-
-@pytest.mark.fortran
-def test_gsis_matches_fortran_iteration_count():
-    ref = _golden("gsis_tauR1e-3_deg3")
-    rec = Solver(_case(tau_r=1e-3, accflag=1)).run()
-    assert rec.iterations == int(ref[-1, 0])
-    n = min(len(ref), rec.iterations)
-    rel = np.abs(rec.residual_history[:n] - ref[:n, 1]) / np.abs(ref[:n, 1])
-    assert rel.max() < 1e-6, f"residual history drifted by {rel.max():.2e}"
-
-
-# ---------------------------------------------------------------------------
-# properties that need no Fortran
-# ---------------------------------------------------------------------------
 def test_cis_reaches_the_discrete_fixed_point():
     """The stopping criterion is on the *iterate* difference, but the solution
     it stops at genuinely solves the discrete transport system."""
@@ -90,7 +56,7 @@ def test_cis_mass_approaches_the_diffusion_limit():
 
     CIS only.  GSIS is *not* monotone here -- its mass error goes 3.5e-6 at
     ``tau_R = 1e-1`` but 3.8e-5 at ``1e-2`` -- because it does not converge to
-    the kinetic fixed point at all (docs/FORTRAN_ISSUES.md #5).  Asserting
+    the kinetic fixed point at all (docs/LIMITATIONS.md #1).  Asserting
     monotonicity for GSIS would be asserting something false.
     """
     prev = None
@@ -111,7 +77,7 @@ def test_gsis_mass_tracks_cis_not_the_diffusion_limit():
     kinetic answer genuinely is not 0.25 -- both schemes give 0.249687, and
     the 3.1e-4 shortfall is physics, not error.  What is worth bounding is how
     far GSIS lands from CIS, which is the fixed-point gap of
-    docs/FORTRAN_ISSUES.md #5, and that shrinks as Kn falls.
+    docs/LIMITATIONS.md #1, and that shrinks as Kn falls.
     """
     gaps = {}
     for tau_r in (1.0, 1e-1, 1e-2):
@@ -156,47 +122,3 @@ def test_deg_convergence_towards_analytic():
         errs.append(float(np.sqrt(np.mean((tavg - ref)[interior] ** 2))))
     assert errs[2] < errs[0], f"no improvement with DEG: {errs}"
     assert errs[2] < 0.02
-
-
-@pytest.mark.fortran
-@pytest.mark.parametrize("name,accflag", [("fx_cis_1e-1", 0), ("fx_gsis_1e-1", 1)])
-def test_field_output_matches_the_fortran_tecplot_file(name, accflag):
-    """End-to-end: the sampled 109x109 field, against the reference's own
-    Tecplot output.
-
-    The reference prints ``ES16.6`` -- six significant decimals -- so ~5e-8 on
-    values of order 1 *is* exact agreement at the file's precision.  This
-    exercises the whole chain at once: sweep, moments, point location, the
-    reference-coordinate map and the basis evaluation.
-    """
-    import glob
-
-    from pybte.io_output import locate_points, sample_fields, sampling_grid
-
-    files = glob.glob(str(GOLDEN / name / "2D_*.dat"))
-    if not files:
-        pytest.skip(f"no Fortran field output for {name}")
-    ref = np.loadtxt(files[0], skiprows=2)          # x y T qx qy Nxx Nxy Nyy
-
-    c = _case(tau_r=1e-1, accflag=accflag)
-    s = Solver(c)
-    s.run()
-    px, py = sampling_grid()
-    tri = locate_points(s.mesh, px, py)
-    assert not np.any(tri < 0), "sampling points fell outside the mesh"
-
-    uq = s.acc.uq if s.acc is not None else None
-    T, qx, qy, nxx, _, _ = sample_fields(
-        s.mesh, s.basis, s.vdf, s.ctx.cxv, s.ctx.cyv, s.ctx.domega,
-        c.flow.cv, px, py, tri, uq=uq, ndof_tri=s.ndof)
-
-    # the Fortran writes j outer, i inner
-    def unpack(col):
-        return ref[:, col].reshape(py.size, px.size).T
-
-    tol = 1e-7
-    assert np.abs(T - unpack(2)).max() < tol
-    assert np.abs(qx - unpack(3)).max() < tol
-    assert np.abs(qy - unpack(4)).max() < tol
-    if accflag:
-        assert np.abs(nxx - unpack(5)).max() < tol

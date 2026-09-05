@@ -48,11 +48,10 @@ class Moments:
                    temp=np.zeros(n_tris), qx=np.zeros(n_tris), qy=np.zeros(n_tris))
 
 
-def compute_moments(vdf, cxv, cyv, domega, int_tri, cv, mom: Moments,
-                    zero_qy: bool = True) -> Moments:
+def compute_moments(vdf, cxv, cyv, domega, int_tri, cv, mom: Moments) -> Moments:
     """In-place update of ``mom`` from ``vdf`` (shape ``(ndir, n_tris, ndof)``)."""
     moments_kernel(vdf, cxv, cyv, domega, int_tri, cv,
-                   mom.ts, mom.qxs, mom.qys, mom.temp, mom.qx, mom.qy, zero_qy)
+                   mom.ts, mom.qxs, mom.qys, mom.temp, mom.qx, mom.qy)
     return mom
 
 

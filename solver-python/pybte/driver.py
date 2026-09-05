@@ -156,8 +156,7 @@ class Solver:
             self.factorisation_count += self.ndir * self.n_tris
         if self.acc is None:
             compute_moments(self.vdf, self.ctx.cxv, self.ctx.cyv, self.ctx.domega,
-                            self.integrals.int_tri, self.case.flow.cv, self.mom,
-                            zero_qy=not self.case.compat.qy_accumulation)
+                            self.integrals.int_tri, self.case.flow.cv, self.mom)
         else:
             self.acc.apply()
 

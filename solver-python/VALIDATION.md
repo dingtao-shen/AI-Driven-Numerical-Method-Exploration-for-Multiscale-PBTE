@@ -43,7 +43,7 @@ point of whichever scheme produced the state.
 
 It separates the two schemes: CIS drives it to round-off, **GSIS does
 not** (3.2e-03 against 4.3e-14 at `tau_R = 1e-1`). That is the
-evidence behind `docs/FORTRAN_ISSUES.md` #5 and the reason Proposal
+evidence behind `docs/LIMITATIONS.md` #1 and the reason Proposal
 1's §10 claim that the schemes share a fixed point to `rtol=1e-8`
 does not hold; `docs/fixed_point_study.json` has the scaling.
 

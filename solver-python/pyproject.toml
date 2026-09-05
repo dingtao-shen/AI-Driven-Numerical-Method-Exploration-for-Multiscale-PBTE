@@ -44,6 +44,5 @@ pybte = ["py.typed"]
 testpaths = ["tests"]
 markers = [
   "slow: long-running integration runs",
-  "fortran: requires the Fortran golden dumps in fortran-reference/golden",
 ]
 filterwarnings = ["ignore::DeprecationWarning"]

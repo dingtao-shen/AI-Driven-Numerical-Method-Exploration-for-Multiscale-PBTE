@@ -15,14 +15,6 @@ The heat flux follows from Fourier's law with the Callaway conductivity
 momentum equation carries: ``q = -(Cv*tau_R/3) grad T`` at ``Vg = 1``)::
 
     q = -kappa grad T
-
-.. warning::
-   ``Out_Put_Result.f90`` drops a factor of 2 when it differentiates the
-   series -- it applies ``-Cv/3*TAU_R`` to the raw sum without the ``2/pi``
-   prefactor's surviving ``2``.  Its ``Conduction_A.dat`` heat fluxes are
-   therefore half the correct value.  ``fortran_compat=True`` reproduces that
-   for byte-comparison; the default is the correct flux.  See
-   docs/FORTRAN_ISSUES.md #3.
 """
 from __future__ import annotations
 
@@ -62,19 +54,20 @@ def fourier_temperature(x, y, n_terms=N_TERMS_DEFAULT) -> np.ndarray:
     return s * 2.0 / PI
 
 
-def fourier_flux(x, y, cv=1.0, vg=1.0, tau_r=1.0, n_terms=N_TERMS_DEFAULT,
-                 fortran_compat: bool = False):
-    """``(qx, qy)`` from Fourier's law with ``kappa = Cv Vg^2 tau_R / 3``."""
+def fourier_flux(x, y, cv=1.0, vg=1.0, tau_r=1.0, n_terms=N_TERMS_DEFAULT):
+    """``(qx, qy)`` from Fourier's law with ``kappa = Cv Vg^2 tau_R / 3``.
+
+    The ``2`` is the surviving half of the series' ``2/pi`` prefactor after
+    differentiating ``sin(m pi x)``; dropping it halves every flux.
+    """
     _, sx, sy = _series(x, y, n_terms)
     kappa = cv * vg * vg * tau_r / 3.0
-    factor = 1.0 if fortran_compat else 2.0
-    return -kappa * factor * sx, -kappa * factor * sy
+    return -2.0 * kappa * sx, -2.0 * kappa * sy
 
 
-def analytic_fields(x, y, cv=1.0, vg=1.0, tau_r=1.0,
-                    n_terms=N_TERMS_DEFAULT, fortran_compat: bool = False):
+def analytic_fields(x, y, cv=1.0, vg=1.0, tau_r=1.0, n_terms=N_TERMS_DEFAULT):
     t = fourier_temperature(x, y, n_terms)
-    qx, qy = fourier_flux(x, y, cv, vg, tau_r, n_terms, fortran_compat)
+    qx, qy = fourier_flux(x, y, cv, vg, tau_r, n_terms)
     return t, qx, qy
 
 

@@ -299,22 +299,15 @@ def transport_residual(cxv, cyv, domega, cv, vg, tau_r, tau_n, tau_c, pi,
 # ---------------------------------------------------------------------------
 @njit(cache=True)
 def moments_kernel(vdf, cxv, cyv, domega, int_tri, cv, ts, qxs, qys,
-                   temp, qx, qy, zero_qy):
-    """``Calculate_Macro_Properties``.
-
-    ``zero_qy=False`` reproduces the Fortran defect in which ``Qx`` is zeroed
-    twice and ``Qy`` never is, so the cell-average ``Qy`` accumulates across
-    iterations (docs/FORTRAN_ISSUES.md #2).  Nothing in the Fortran reads
-    ``Qy``, so the defect is invisible there; we default to the fix.
-    """
+                   temp, qx, qy):
+    """``Calculate_Macro_Properties``."""
     ndir = vdf.shape[0]
     n_tris = vdf.shape[1]
     nd = vdf.shape[2]
     for i in range(n_tris):
         temp[i] = 0.0
         qx[i] = 0.0
-        if zero_qy:
-            qy[i] = 0.0
+        qy[i] = 0.0
     for i in range(n_tris):
         for l in range(nd):
             ss = 0.0

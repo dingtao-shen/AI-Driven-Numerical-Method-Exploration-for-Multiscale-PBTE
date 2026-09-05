@@ -31,19 +31,6 @@ def _case(name, **kw):
 # §7.1  boundary-condition dispatch
 # ---------------------------------------------------------------------------
 @pytest.mark.slow
-def test_thermalising_is_unchanged_by_the_dispatch():
-    """All shipped boundaries are type 1, so restoring the dispatch must be a
-    strict superset: the shipped case is unaffected."""
-    from ..conftest import GOLDEN, has_golden
-
-    if not has_golden("cis_tauR1e-1_deg3"):
-        pytest.skip("no Fortran golden run")
-    ref = np.atleast_2d(np.loadtxt(GOLDEN / "cis_tauR1e-1_deg3" / "residual_history.txt"))
-    rec = Solver(_case("cavity_tauR1e-3_cis.yaml", **{"flow.tau_r": 1e-1})).run()
-    assert np.array_equal(rec.residual_history, ref[:, 1])
-
-
-@pytest.mark.slow
 @pytest.mark.parametrize("accflag", [0, 1])
 def test_nonthermalising_wall_conserves_energy(accflag):
     """§7.1: a diffusely reflecting wall emits exactly what makes its own net
@@ -53,7 +40,7 @@ def test_nonthermalising_wall_conserves_energy(accflag):
     Both schemes, because the two failure modes are different: the kinetic
     boundary condition lives in the sweep, the macroscopic trace condition in
     the HDG right-hand side.  GSIS needs the tangential projection of the
-    trace flux to be stable at all (docs/FORTRAN_ISSUES.md #9).
+    trace flux to be stable at all.
     """
     s = Solver(_case("cavity_adiabatic_gsis.yaml", **{"scheme.accflag": accflag}))
     rec = s.run()
@@ -115,7 +102,7 @@ def test_symmetry_bc_is_rejected():
 @pytest.mark.slow
 def test_variant_b_is_selectable_and_diverges():
     """Variant B is ported faithfully, which means reproducing the fact that
-    it diverges -- see docs/FORTRAN_ISSUES.md #6."""
+    it diverges -- see docs/LIMITATIONS.md #3."""
     c = _case("cavity_tauR1e-3_gsis.yaml", **{"scheme.acc_variant": "B",
                                               "iteration.tmax": 40})
     s = Solver(c)
@@ -137,29 +124,6 @@ def test_variant_a_and_b_build_different_matrices():
 # ---------------------------------------------------------------------------
 # §7.4  linear-time assembly
 # ---------------------------------------------------------------------------
-@pytest.mark.fortran
-def test_assembled_matrix_matches_the_fortran_csr():
-    """COO assembly must reproduce the Fortran's dense-workspace result --
-    same sparsity, same values."""
-    import sys
-    from pathlib import Path
-
-    from ..conftest import GOLDEN, has_dump
-
-    if not has_dump("dump_gsis_shipped"):
-        pytest.skip("no Fortran dump")
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
-    from dump_fortran_stages import FortranDump
-
-    d = FortranDump(GOLDEN / "dump_gsis_shipped" / "dump")
-    s = Solver(_case("cavity_tauR1e-3_gsis.yaml"))
-    K = s.acc.K
-    ref = d.csr()
-    assert K.shape == ref.shape
-    assert K.nnz == ref.nnz
-    assert np.abs((K - ref)).max() < 1e-12 * np.abs(ref.data).max()
-
-
 def test_assembly_is_subquadratic_in_face_count():
     """The reference is O(N_FCS^2); ours must not be.  Compare the ratio of
     assembly times against the ratio of face counts squared."""
@@ -241,7 +205,7 @@ def test_true_residual_tracks_the_iterate_residual_for_cis():
 
 @pytest.mark.slow
 def test_true_residual_separates_gsis_from_cis():
-    """The measurement behind docs/FORTRAN_ISSUES.md #5: converged to the same
+    """The measurement behind docs/LIMITATIONS.md #1: converged to the same
     iterate tolerance, CIS satisfies the discrete transport system and GSIS
     does not."""
     cis = Solver(_case("cavity_tauR1e-3_cis.yaml",

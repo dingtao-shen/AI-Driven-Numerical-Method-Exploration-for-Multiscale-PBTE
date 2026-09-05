@@ -12,10 +12,11 @@ The right-hand side has two parts:
 * on a physical wall, the trace fields are imposed **from the kinetic
   solution**, not from the wall temperature: the face rows are overwritten
   with the DVM's own wall traces.  A thermalising wall imposes ``T_hat``
-  only, an adiabatic one imposes all three.  (The Fortran keeps the
-  wall-temperature alternative commented out just above; taking the trace
-  from the DVM is what makes GSIS preserve the kinetic fixed point instead
-  of converging to a Fourier solution.)
+  only; an adiabatic one imposes all three, with the flux projected onto the
+  wall tangent so that ``n . q_hat = 0``.  Taking the trace from the kinetic
+  solution rather than from the wall temperature is what keeps the
+  acceleration tied to the kinetic problem instead of drifting to a Fourier
+  solution.
 """
 from __future__ import annotations
 
@@ -171,19 +172,10 @@ class GlobalSolver:
             # Adiabatic wall: project the imposed trace heat flux onto the
             # wall tangent, q_hat = (I - n n^T) q, so that n.q_hat = 0.
             #
-            # This is unconditional, and it is a deviation from variant A.
-            # The reference has the projection written out but commented out
-            # there (it is live in variant B), so variant A imposes the raw
-            # DVM flux -- a trace with a non-zero normal component at a wall
-            # that is by definition adiabatic.  The inconsistency is not
-            # cosmetic: with the raw flux, GSIS on the adiabatic cavity
-            # diverges to 1e77 within 300 iterations; with the projection it
-            # converges in 30 to int T dA = 0.5000000, the exact 1-D answer.
-            #
-            # Nothing is lost by fixing it, because the reference cannot
-            # reach this path at all: Solvers.f90 treats every wall as
-            # thermalising, so BC_TYP=2 never occurs in a working run.
-            # See docs/FORTRAN_ISSUES.md #9.
+            # Without it the trace carries a normal component at a wall
+            # that is by definition adiabatic, and GSIS diverges to 1e77
+            # within 300 iterations; with it, the adiabatic cavity converges
+            # in 30 to int T dA = 0.5000000, the exact 1-D answer.
             if ad.size:
                 ffa[0:nf, ad] = mom[k_ad, 0:nf].T / self.cv
                 qxb = mom[k_ad, nf:2 * nf].T

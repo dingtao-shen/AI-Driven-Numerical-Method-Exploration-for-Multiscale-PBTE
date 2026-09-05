@@ -79,16 +79,6 @@ def test_flux_is_fourier_law():
     assert float(qy) == pytest.approx(-kappa * dTdy, rel=1e-6)
 
 
-def test_fortran_compat_flux_is_half():
-    """Out_Put_Result.f90 differentiates the series but forgets the surviving
-    factor 2, so its Conduction_A.dat fluxes are half the correct value
-    (docs/FORTRAN_ISSUES.md #3).  Keep the switch, default to correct."""
-    a = fourier_flux(0.4, 0.6, 1.0, 1.0, 1e-3, fortran_compat=False)
-    b = fourier_flux(0.4, 0.6, 1.0, 1.0, 1e-3, fortran_compat=True)
-    assert float(a[0]) == pytest.approx(2.0 * float(b[0]), rel=1e-14)
-    assert float(a[1]) == pytest.approx(2.0 * float(b[1]), rel=1e-14)
-
-
 def test_l2_error_utility():
     t = (np.arange(30) + 0.5) / 30
     X, Y = np.meshgrid(t, t, indexing="ij")

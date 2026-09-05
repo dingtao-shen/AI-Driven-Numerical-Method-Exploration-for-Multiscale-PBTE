@@ -8,9 +8,10 @@ iteration schemes —
 * **GSIS** — general synthetic iterative scheme, HDG macroscopic acceleration
   (`scheme.accflag: 1`)
 
-This is a fidelity port of the Fortran research solver in
-`../fortran-reference/ACC_2D2V_LinearCallawayModel`. Self-contained: no Intel
-compiler, no MKL, no PARDISO — `pip install -e .` and PyPI wheels only.
+Ported from a Fortran research solver (`ACC_2D2V_LinearCallawayModel`) and
+verified against it before that reference was retired; see `VALIDATION.md`.
+Self-contained: no Intel compiler, no MKL, no PARDISO — `pip install -e .` and
+PyPI wheels only.
 
 ## Install and run
 
@@ -18,7 +19,7 @@ compiler, no MKL, no PARDISO — `pip install -e .` and PyPI wheels only.
 pip install -e ".[dev]"          # numba + pytest; plain install works without
 python -m pybte info cases/cavity_tauR1e-3_cis.yaml
 python -m pybte run  cases/cavity_tauR1e-3_gsis.yaml
-python -m pybte convert ../fortran-reference/ACC_2D2V_LinearCallawayModel/control.in
+python -m pybte convert path/to/control.in     # old Fortran namelist -> yaml
 ```
 
 `numba` is optional. Without it every kernel falls back to its pure-Python
@@ -35,7 +36,7 @@ record = solver.run()
 
 record.iterations          # int
 record.converged           # bool
-record.residual_history    # (n_iter,)  the Fortran's iterate residual
+record.residual_history    # (n_iter,)  the original iterate residual
 record.residual_true       # (n_iter,) or None -- a real residual, see §7.6
 record.temp, record.qx, record.qy        # (n_tris,) element integrals
 record.temp_dofs                          # (ndof_tri, n_tris)
@@ -94,35 +95,35 @@ reports the implied error; it lands within an order of magnitude of the truth.
 
 ## Fidelity
 
-Verified against the Fortran on every stage of every iteration
-(`tests/stage/`, `tools/compare_stages.py`):
+Verified against the Fortran reference stage by stage, on every iteration,
+before that reference was removed from the tree (it remains in git history at
+the `Port ACC_2D2V_LinearCallawayModel` commit):
 
-* **Setup — bit-identical.** Mesh topology, geometry, angular quadrature,
-  both nodal bases, all nine integral tensors and `TRI_ORDER` reproduce the
-  Fortran exactly, not merely to tolerance. That required matching the
-  reference's summation orders and its use of libm `pow` for monomials.
-* **CIS — bit-identical over full runs**, the longest verified being 16 836
+* **Setup was bit-identical.** Mesh topology, geometry, angular quadrature,
+  both nodal bases, all nine integral tensors and the sweep ordering
+  reproduced the Fortran exactly — not merely to tolerance. That required
+  matching the reference's summation orders and its use of libm `pow` for
+  monomials.
+* **CIS was bit-identical over full runs**, the longest verified being 16 836
   iterations at `tau_R = 1e-2`: identical iteration count, and every entry of
   the residual and mass histories equal to the last bit. The element LU is a
-  hand-written `DGETF2`/`DGETRS` look-alike for exactly this reason.
-* **GSIS — agrees to ~2.5e-13** relative, stage by stage. The residual is the
-  sparse LU reordering the trace solve relative to PARDISO. The assembled
-  global matrix matches the Fortran CSR to 1.5e-15 with identical sparsity.
+  hand-written `DGETF2`/`DGETRS` look-alike for exactly this reason, which
+  also let the factorisation be hoisted out of the iteration.
+* **GSIS agreed to ~2.5e-13** relative, stage by stage; the assembled global
+  matrix matched the Fortran CSR to 1.5e-15 with identical sparsity. The
+  residual is the sparse LU reordering the trace solve relative to PARDISO.
+* **The sampled output field matched** the reference's own Tecplot file to
+  `5e-8` — exact at that file's `ES16.6` print precision.
 
-`VALIDATION.md` has the full §6.5 sweep.
+`VALIDATION.md` has the full sweep. Those results are frozen as assertions in
+`tests/integration/test_regression.py`, so the solver cannot drift away from
+them now that the reference is gone.
 
-## Three things you should know before trusting a result
+## Two things you should know before trusting a result
 
-All are documented in full in **`docs/FORTRAN_ISSUES.md`**.
+Both are documented in full in **`docs/LIMITATIONS.md`**, along with two more.
 
-**1. The reference's GSIS path is unusable as shipped.** `Init_Acceleration_New`
-uses `AA_TMP` uninitialised; the six off-diagonal blocks it never writes hold
-freed heap (values ~1e5) and corrupt every row of the HDG global matrix. The
-shipped GSIS "converges" in 5 iterations to a field of magnitude 1e-27.
-`tools/build_fortran.sh` zeroes it in its build copy. This port is correct by
-construction.
-
-**2. GSIS does not converge to the same discrete fixed point as CIS.** Both
+**1. GSIS does not converge to the same discrete fixed point as CIS.** Both
 schemes reach `residual_iterate < 1e-13`, but the *true* transport residual is
 4.3e-14 for CIS and 3.2e-03 for GSIS: CIS is at the discrete kinetic fixed
 point and GSIS is not. Their converged fields differ by 1.7e-2 at
@@ -135,15 +136,12 @@ anything built on this solver needs to grade against the true residual and the
 analytic limit instead. `tools/fixed_point_study.py` reproduces the
 measurement.
 
-**3. Two boundary branches in the reference are unreachable, and both are
-broken.** `Solvers.f90` treats every wall as thermalising, so the periodic and
-adiabatic paths never execute there and have never been exercised. Both fail
-when they are: the HDG assembly ignores that a periodic pair's trace bases are
-mirrored, and the adiabatic wall's tangential flux projection is commented out
-in variant A, which sends GSIS to `1e77` within 300 iterations. `pybte` fixes
-both — the periodic channel is then `x`-independent to `1e-5`, and the
-adiabatic cavity converges to `int T dA = 0.5000000` with the net normal flux
-through each adiabatic face vanishing to `5e-14`.
+**2. Do not trust a CIS residual.** The stopping criterion measures the *step*
+between iterates, not the *error*, and source iteration's contraction factor
+approaches 1 as the medium becomes optically thick. At `tau_R = 1e-4` CIS
+reports a residual of `2.5e-6` after 200 000 iterations while its answer is
+89% wrong. `record.error_estimate` reports the implied error; look at it
+before believing a CIS result. Table below.
 
 ## Configuration
 
@@ -170,11 +168,11 @@ performance: {precompute_inverse: true, kernel: numba, threads: 1}
 
 Boundary types are `thermalising`, `nonthermalising` (diffusely reflecting,
 adiabatic) and `periodic` — all three are implemented and dispatched on, which
-the reference does not do. `scheme.acc_variant: B` selects the `TAU_R`-rescaled
-acceleration from `Synthetic_Acceleration1.f90`; it is ported faithfully, which
-means it diverges (see the issues doc).
+the reference does not do. `scheme.acc_variant: B` selects the
+`TAU_R`-rescaled acceleration; it is ported faithfully, which means it
+diverges (`LIMITATIONS.md` #3).
 
-Every default reproduces the Fortran.
+Every default reproduces the original solver.
 
 ## Layout
 
@@ -188,56 +186,27 @@ pybte/
   sweep_reference.py                     the same sweep in plain numpy/LAPACK
   moments.py bc.py analytic.py io_output.py driver.py
   acceleration/                          GSIS; not imported at all when accflag=0
-cases/  meshes/  docs/  tests/{unit,stage,integration}
+cases/  meshes/  docs/  tests/{unit,integration}
 tools/
-  build_fortran.sh  run_fortran.py       build and drive the reference
-  dump_fortran_stages.py compare_stages.py   the port's debugging instrument
-  make_meshes.py                         mesh family (reproduces the shipped one)
-  fixed_point_study.py validation_sweep.py
+  make_meshes.py        mesh family (reproduces the original shipped mesh)
+  benchmark.py          the §5 performance targets
+  validation_sweep.py   regenerates VALIDATION.md
+  fixed_point_study.py  measures the CIS/GSIS gap and how it scales
 ```
 
 CIS and GSIS are separable at the module boundary: with `accflag: 0` nothing
 in `pybte/acceleration/` is imported.
 
-## Reproducing the Fortran side
-
-```bash
-tools/build_fortran.sh --variant A        # gfortran + MKL PARDISO
-tools/build_fortran.sh --variant A --no-mkl   # reference LAPACK + dense stub
-python tools/run_fortran.py --out /tmp/f90 --accflag 1 --dump
-python tools/compare_stages.py /tmp/f90/dump
-```
-
-The reference tree is never modified. `build_fortran.sh` copies it, overlays
-additive shims (MKL/OpenMP no-ops, an optional dense PARDISO stand-in, the
-dump instrumentation) and applies the one correctness fix described above;
-`--no-fixes` reproduces the broken build.
-
-## Performance
-
-Shipped mesh, `DEG=3`, 20x40 ordinates, single process (`tools/benchmark.py`):
-
-| | target | measured |
-|---|---|---|
-| setup | < 30 s | 0.40 s |
-| per CIS iteration | < 50 ms | 9.8 ms |
-| per GSIS iteration | < 150 ms | 12.7 ms |
-| GSIS full run at `tau_R=1e-3` | < 60 s | 0.94 s |
-| peak RSS | < 2 GB | 803 MB |
-
-The element operator depends only on geometry, direction and `tau_C`, all
-iteration-invariant, so it is LU-factorised once (128 MB here) and each sweep
-is a triangular solve. `performance.precompute_inverse: false` trades that
-memory back for the reference's rebuild-every-iteration behaviour.
-
 ## Tests
 
 ```bash
-pytest tests/unit                    # ~60 s, no Fortran needed
-pytest tests/stage                   # needs fortran-reference/golden dumps
-pytest -m "not slow"                 # everything quick
-pytest                               # full, several minutes
+pytest -m "not slow"                 # ~60 s
+pytest                               # full, about 20 minutes
 ```
 
-`docs/`: `EQUATIONS.md` (model and discretisation), `INDEXING.md` (the 1-based
-↔ 0-based mapping, in one place), `FORTRAN_ISSUES.md` (eleven findings).
+The slow half is `tests/integration/test_regression.py`, which re-runs the
+converged cases and checks their iteration counts and masses against frozen
+values. Several of those are CIS runs of 16 000+ iterations.
+
+`docs/`: **`LIMITATIONS.md`** (read this one), `EQUATIONS.md` (model and
+discretisation), `INDEXING.md` (the array-layout conventions).

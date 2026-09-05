@@ -172,7 +172,7 @@ class SweepContext:
         **GSIS.**  The correction moves ``vdf`` and the moments together to a
         state that does *not* satisfy the transport system, and this is what
         detects it -- 3.2e-03 at ``tau_R = 1e-1`` where CIS reaches 4.3e-14.
-        That is the evidence behind docs/FORTRAN_ISSUES.md #5.
+        That is the evidence behind docs/LIMITATIONS.md #1.
         """
         ndir = self.cxv.size
         num = np.zeros(ndir)

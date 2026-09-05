@@ -28,7 +28,7 @@ def test_gauss_legendre_matches_numpy(n):
 
     Downstream this shows up as ``sum(DOMEGA)`` missing ``4 pi`` by ~2e-14
     relative.  It is reference behaviour, reproduced bit-for-bit, and is
-    recorded in docs/FORTRAN_ISSUES.md #4 rather than silently fixed.
+    recorded in docs/LIMITATIONS.md #4 rather than silently fixed.
     """
     a, w = gauss_legendre(n, 0.0, PI)
     ra, rw = leggauss_reference(n, 0.0, PI)

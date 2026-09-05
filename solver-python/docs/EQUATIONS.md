@@ -200,11 +200,11 @@ The payoff is that the iteration count stops depending on `tau_R`: 22, 30, 27,
 50 iterations at `tau_R = 1, 1e-1, 1e-2, 1e-3` against CIS's 24, 317, 16836,
 `>2e4`.
 
-**But see `FORTRAN_ISSUES.md` §5**: because the macroscopic system is
-discretised by HDG while the kinetic one is upwind DG, this implementation of
-GSIS does *not* converge to the same discrete fixed point as CIS. It is a fast
-approximate solver, not an oracle for the CIS answer, and the two fields
-differ by `~1.7e-2` at `tau_R = 1e-1`.
+**But see `LIMITATIONS.md` #1**: because the macroscopic system is
+discretised by HDG while the kinetic one is upwind DG, GSIS does *not*
+converge to the same discrete fixed point as CIS. It is a fast approximate
+solver, not an oracle for the CIS answer, and the two fields differ by
+`~1.7e-2` at `tau_R = 1e-1`.
 
 ## 7. Convergence criterion
 
@@ -234,4 +234,4 @@ probe. Two additional numbers are reported alongside it:
   transport system at the current state. For CIS this measures the same
   moment change the iterate residual does, so it does *not* expose the trap;
   what it does expose is that GSIS converges to a state which does not
-  satisfy the transport system at all (§6, and `docs/FORTRAN_ISSUES.md` #5).
+  satisfy the transport system at all (§6, and `LIMITATIONS.md` #1).
