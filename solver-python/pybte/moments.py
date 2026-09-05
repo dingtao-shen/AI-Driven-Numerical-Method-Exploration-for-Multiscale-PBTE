@@ -60,8 +60,14 @@ def residual_iterate(temp: np.ndarray, t_old: np.ndarray) -> float:
     """``Calculate_Residual_T``: ``sqrt(sum (T-T_old)^2 / sum T^2)``.
 
     Note what this is *not*: it is the normalised change between successive
-    iterates, so a contraction factor near 1 makes it small long before the
-    iterate is near the fixed point.  That pseudo-convergence is exactly the
-    phenomenon the benchmark studies, so the criterion is preserved verbatim.
+    iterates -- a *step*, not an *error*.  For a linearly converging sequence
+    the remaining error is the sum of all future steps,
+    ``r * rho/(1 - rho)``, and ``rho -> 1`` as the medium becomes optically
+    thick.  On the shipped mesh at ``tau_R = 1e-4`` CIS reports ``2.5e-6``
+    after 200 000 iterations while its answer is 89% wrong.
+
+    That pseudo-convergence is exactly the phenomenon the benchmark studies,
+    so this criterion is preserved verbatim as the stopping rule.
+    ``RunRecord.error_estimate`` reports the implied error alongside it.
     """
     return float(residual_kernel(temp, t_old))

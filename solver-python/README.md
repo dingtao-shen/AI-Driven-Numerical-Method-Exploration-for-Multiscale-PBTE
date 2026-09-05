@@ -76,6 +76,22 @@ on the shipped 200-element mesh at `DEG=3`:
 practical budget.** That is not a bug; it is the phenomenon the project is
 about.
 
+### Do not trust a CIS residual
+
+The stopping criterion measures the *step* between iterates, not the *error*.
+Source iteration converges linearly, so the error left when you stop is
+`r * rho/(1-rho)`, and `rho -> 1` as the medium becomes optically thick:
+
+| `tau_R` | CIS iterations | reported residual | actual error in `int T dA` |
+|---|---|---|---|
+| 1e-2 | 16 836 (converged) | 1.0e-08 | 1.0e-05 |
+| 1e-3 | 200 000 (truncated) | 1.5e-06 | **4.4e-02** |
+| 1e-4 | 200 000 (truncated) | 2.5e-06 | **2.2e-01** — 89% wrong |
+
+`record.error_estimate` fits `rho` to the tail of the residual history and
+reports the implied error; it lands within an order of magnitude of the truth.
+`record.contraction` gives `rho` itself.
+
 ## Fidelity
 
 Verified against the Fortran on every stage of every iteration

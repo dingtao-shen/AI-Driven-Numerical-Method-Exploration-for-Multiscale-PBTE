@@ -153,11 +153,26 @@ class SweepContext:
     # -- §7.6 --------------------------------------------------------------
     def true_residual(self, mom, vdf) -> float:
         """``||A_SOL f - A_SRC|| / ||A_SRC||`` in the solid-angle-weighted
-        L2 norm, with *no* sweep applied.
+        L2 norm, evaluated at the current state with *no* sweep applied.
 
-        Unlike ``residual_iterate`` this is a residual of the discrete system
-        itself, so it cannot be made small by a slow contraction: it is zero
-        only at the fixed point.
+        This asks one question: do ``vdf`` and the moments in ``mom`` jointly
+        satisfy the discrete transport system?  It is zero exactly at the
+        fixed point of whichever scheme produced them.
+
+        Read the two schemes differently.
+
+        **CIS.**  The sweep leaves ``A f = b(moments_before)``, and ``mom`` is
+        then recomputed from that ``f``, so what this measures is
+        ``b(moments_before) - b(moments_after)`` -- the change in the moments,
+        which is what ``residual_iterate`` already measures.  The two agree to
+        within a normalisation (1.52e-06 vs 1.52e-06 on the truncated
+        ``tau_R = 1e-3`` run).  **Neither reveals the error**: see
+        ``RunRecord.error_estimate`` for that.
+
+        **GSIS.**  The correction moves ``vdf`` and the moments together to a
+        state that does *not* satisfy the transport system, and this is what
+        detects it -- 3.2e-03 at ``tau_R = 1e-1`` where CIS reaches 4.3e-14.
+        That is the evidence behind docs/FORTRAN_ISSUES.md #5.
         """
         ndir = self.cxv.size
         num = np.zeros(ndir)

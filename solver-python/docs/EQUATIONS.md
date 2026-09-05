@@ -212,11 +212,26 @@ differ by `~1.7e-2` at `tau_R = 1e-1`.
 RESIDUAL = sqrt( sum_I (T_I - T_I^old)^2 / sum_I T_I^2 )
 ```
 
-the normalised change in cell-average temperature between successive iterates.
-Note what this is *not*: a residual of the system. When the contraction factor
-is near 1 — precisely the CIS-at-small-`Kn` case — successive iterates are
-close together long before either is close to the fixed point, so this
-systematically understates the true error. That pseudo-convergence trap is
-preserved deliberately as the default stopping rule;
-`iteration.true_residual: true` additionally reports `||A f - b||/||b||` of
-the discrete transport system, which is zero only at the fixed point.
+the normalised change in cell-average temperature between successive
+iterates. Note what this is: a **step**, not an **error**.
+
+Source iteration converges linearly, `r_{n+1} = rho r_n`, so the error left
+after stopping is the sum of all future steps, `r rho/(1-rho)`. As the medium
+becomes optically thick `rho -> 1` and that factor blows up. Measured at
+`tau_R = 1e-2` on the shipped mesh, stopping at `tol = 1e-4`:
+
+| reported residual | actual error against the converged answer |
+|---|---|
+| 9.99e-05 | 1.46e-01 — **1465x larger** |
+
+That pseudo-convergence trap is preserved deliberately as the default
+stopping rule, because it is one of the things the benchmark is meant to
+probe. Two additional numbers are reported alongside it:
+
+* `RunRecord.error_estimate` — `r rho/(1-rho)` with `rho` fitted to the tail
+  of the residual history. This is the one that exposes the trap.
+* `iteration.true_residual: true` — `||A f - b||/||b||` for the discrete
+  transport system at the current state. For CIS this measures the same
+  moment change the iterate residual does, so it does *not* expose the trap;
+  what it does expose is that GSIS converges to a state which does not
+  satisfy the transport system at all (§6, and `docs/FORTRAN_ISSUES.md` #5).

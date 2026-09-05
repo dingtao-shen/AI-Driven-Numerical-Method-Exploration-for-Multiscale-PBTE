@@ -34,8 +34,10 @@ __all__ = ["Case", "Boundary", "Iteration", "Scheme", "VelMesh", "DG", "Flow",
 class Iteration:
     tol: float = 1.0e-8
     tmax: int = 10_000
-    #: also compute ||transport residual|| each iteration (§7.6).  Never
-    #: changes the stopping criterion, which stays `residual_iterate < tol`.
+    #: Also compute the transport residual of the discrete system each
+    #: iteration (§7.6).  Never changes the stopping criterion, which stays
+    #: ``residual_iterate < tol``.  For CIS this tracks the iterate residual;
+    #: what exposes the error is ``RunRecord.error_estimate``.
     true_residual: bool = False
     #: evaluate the true residual only every k-th iteration (it costs a sweep)
     true_residual_every: int = 1

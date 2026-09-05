@@ -317,10 +317,27 @@ directions needed it in the run record (proposal §7.7).
   weighted by `INT_NODFUNC_TRI`, so `SUM(Temp)` is the domain integral of `T`
   — `0.25` for the shipped cavity, not the mean temperature. `MASS` in the
   iteration log is that integral.
-* **The residual is the change between iterates**, not a residual of the
-  system. For slowly-converging CIS it systematically understates the true
-  error; that is the pseudo-convergence trap and it is preserved deliberately.
-  `iteration.true_residual: true` reports the real one alongside it (§7.6).
+* **The residual is the change between iterates** -- a *step*, not an
+  *error*. For a linearly converging sequence the remaining error is the sum
+  of all future steps, `r * rho/(1-rho)`, and `rho -> 1` as the medium becomes
+  optically thick. The trap this sets is severe and is preserved deliberately:
+
+  | `tau_R` | CIS iterations | reported residual | actual error in `int T dA` |
+  |---|---|---|---|
+  | 1e-2 | 16 836 (converged) | 1.0e-08 | 1.0e-05 |
+  | 1e-3 | 200 000 (truncated) | 1.5e-06 | **4.4e-02** |
+  | 1e-4 | 200 000 (truncated) | 2.5e-06 | **2.2e-01**, i.e. 89% wrong |
+
+  A residual of `2.5e-6` after 200 000 iterations looks like a nearly
+  converged run. It is not. `RunRecord.error_estimate` fits `rho` to the tail
+  of the residual history and reports `r rho/(1-rho)`, which lands within an
+  order of magnitude of the actual error.
+
+  Note that `iteration.true_residual: true` does **not** expose this. It
+  reports the transport residual of the discrete system, which for CIS
+  measures the same moment change the iterate residual does (1.52e-06 against
+  1.52e-06 on the truncated `tau_R = 1e-3` run). What it *is* good for is
+  separating the schemes: see #5.
 * **`NAZIM` is silently forced even** (`NAZIM = (NAZIM/2)*2`).
 * **The sweep is Gauss–Seidel, not Jacobi.** `VDF(:,TRIDext,...)` is read
   after upwind neighbours have already been overwritten in the same pass. A

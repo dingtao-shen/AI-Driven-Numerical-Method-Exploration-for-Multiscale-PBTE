@@ -205,18 +205,71 @@ def test_true_residual_is_reported_and_does_not_change_the_stopping_rule():
 
 
 @pytest.mark.slow
-def test_iterate_residual_understates_the_true_error_for_slow_cis():
-    """The pseudo-convergence trap, demonstrated: stop CIS at the default
-    tolerance and the true residual is still orders of magnitude larger."""
-    c = _case("cavity_tauR1e-3_cis.yaml", **{"flow.tau_r": 1e-2,
-                                             "iteration.tol": 1e-6,
+def test_true_residual_tracks_the_iterate_residual_for_cis():
+    """For CIS the two residuals measure the same thing, and this pins that
+    down so the distinction is not quietly overclaimed again.
+
+    The sweep leaves ``A f = b(moments_before)`` and the moments are then
+    recomputed from that ``f``, so the transport residual evaluated afterwards
+    is the change in the moments -- exactly what the iterate residual is.
+    Where they *do* differ is GSIS, covered by the next test.
+    """
+    c = _case("cavity_tauR1e-3_cis.yaml", **{"flow.tau_r": 1e-1,
+                                             "iteration.tol": 1e-7,
                                              "iteration.tmax": 200000})
     s = Solver(c)
     rec = s.run()
     true_res = s.ctx.true_residual(s.mom, s.vdf)
-    assert rec.final_residual < 1e-6
-    assert true_res > 100 * rec.final_residual, (
-        f"iterate residual {rec.final_residual:.2e} vs true {true_res:.2e}")
+    assert 0.1 < true_res / rec.final_residual < 10.0, (
+        f"iterate {rec.final_residual:.2e} vs true {true_res:.2e}")
+
+
+@pytest.mark.slow
+def test_true_residual_separates_gsis_from_cis():
+    """The measurement behind docs/FORTRAN_ISSUES.md #5: converged to the same
+    iterate tolerance, CIS satisfies the discrete transport system and GSIS
+    does not."""
+    cis = Solver(_case("cavity_tauR1e-3_cis.yaml",
+                       **{"flow.tau_r": 1e-1, "iteration.tol": 1e-12,
+                          "iteration.tmax": 200000}))
+    cis.run()
+    gsis = Solver(_case("cavity_tauR1e-3_gsis.yaml",
+                        **{"flow.tau_r": 1e-1, "iteration.tol": 1e-12,
+                           "iteration.tmax": 200000}))
+    gsis.run()
+
+    r_cis = cis.ctx.true_residual(cis.mom, cis.vdf)
+    r_gsis = gsis.ctx.true_residual(gsis.mom, gsis.vdf)
+    assert r_cis < 1e-10, f"CIS is not at the discrete fixed point: {r_cis:.2e}"
+    assert r_gsis > 1e-4, f"GSIS unexpectedly reached it: {r_gsis:.2e}"
+
+
+@pytest.mark.slow
+def test_error_estimate_exposes_pseudo_convergence():
+    """§7.6's real content: the stopping criterion measures a step, so the
+    error has to be estimated from the observed contraction factor.
+
+    Truncate CIS well short of convergence and check that the estimate lands
+    within an order of magnitude of the actual distance from the converged
+    answer -- and that the raw residual does not.
+    """
+    ref = Solver(_case("cavity_tauR1e-3_cis.yaml",
+                       **{"flow.tau_r": 1e-2, "iteration.tol": 1e-9,
+                          "iteration.tmax": 200000})).run()
+    assert ref.converged
+
+    rec = Solver(_case("cavity_tauR1e-3_cis.yaml",
+                       **{"flow.tau_r": 1e-2, "iteration.tmax": 2000})).run()
+    assert not rec.converged
+    actual = float(np.abs(rec.temp - ref.temp).max() / np.abs(ref.temp).max())
+
+    assert 0.9 < rec.contraction < 1.0, f"rho = {rec.contraction}"
+    assert actual > 100 * rec.final_residual, (
+        "the residual should badly understate the error here: "
+        f"residual {rec.final_residual:.2e}, actual error {actual:.2e}")
+    ratio = rec.error_estimate / actual
+    assert 0.1 < ratio < 30.0, (
+        f"error estimate {rec.error_estimate:.2e} vs actual {actual:.2e}")
 
 
 # ---------------------------------------------------------------------------

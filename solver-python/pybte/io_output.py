@@ -72,6 +72,44 @@ class RunRecord:
     def mass(self) -> float:
         return float(self.temp.sum()) if self.temp.size else float("nan")
 
+    @property
+    def contraction(self) -> float:
+        """Geometric contraction factor fitted to the tail of the residual
+        history, or ``nan`` if the history is too short or not decaying.
+
+        Source iteration converges linearly, so the residual settles into
+        ``r_{n+1} = rho r_n``.  ``rho`` approaches 1 as the medium becomes
+        optically thick, which is both why CIS crawls and why its residual
+        stops being informative about its error.
+        """
+        h = np.asarray(self.residual_history, dtype=float)
+        if h.size < 8:
+            return float("nan")
+        tail = h[max(1, h.size // 2):]
+        tail = tail[np.isfinite(tail) & (tail > 0)]
+        if tail.size < 4 or tail[-1] >= tail[0]:
+            return float("nan")
+        rho = (tail[-1] / tail[0]) ** (1.0 / (tail.size - 1))
+        return float(rho) if 0.0 < rho < 1.0 else float("nan")
+
+    @property
+    def error_estimate(self) -> float:
+        """Estimated distance from the fixed point, ``r * rho/(1 - rho)``.
+
+        The stopping criterion measures the *step* between iterates, not the
+        *error*.  For a linearly converging sequence the remaining error is
+        the sum of all future steps, ``r rho/(1-rho)``, which for ``rho`` near
+        1 is orders of magnitude larger than ``r`` itself.
+
+        This is the number to look at before believing a CIS result: at
+        ``tau_R = 1e-4`` on the shipped mesh CIS reports a residual of
+        ``2.5e-6`` after 200 000 iterations while its answer is off by 89%.
+        """
+        rho = self.contraction
+        if not np.isfinite(rho):
+            return float("nan")
+        return float(self.final_residual * rho / (1.0 - rho))
+
     def to_dict(self, include_fields: bool = True) -> dict:
         d = asdict(self)
         for k, v in list(d.items()):
@@ -82,6 +120,8 @@ class RunRecord:
                     d[k] = v.tolist()
         d["final_residual"] = self.final_residual
         d["mass"] = self.mass
+        d["contraction"] = self.contraction
+        d["error_estimate"] = self.error_estimate
         return d
 
     def to_json(self, path, include_fields: bool = True) -> Path:

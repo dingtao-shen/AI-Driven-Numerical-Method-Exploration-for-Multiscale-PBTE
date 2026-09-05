@@ -130,7 +130,13 @@
     "npole": 20,
     "nazim": 40,
     "scheme": "CIS",
-    "skipped": true
+    "iterations": 200000,
+    "converged": false,
+    "final_residual": 1.518315930534204e-06,
+    "mass": 0.20560117204819428,
+    "wall": 2057.3468072490004,
+    "true_residual": 1.5218375663774816e-06,
+    "truncated_at": 200000
   },
   {
     "tau_r": 0.0001,
@@ -153,7 +159,13 @@
     "npole": 20,
     "nazim": 40,
     "scheme": "CIS",
-    "skipped": true
+    "iterations": 200000,
+    "converged": false,
+    "final_residual": 2.5388359324974655e-06,
+    "mass": 0.02821877206736593,
+    "wall": 1924.3955221119995,
+    "true_residual": 2.590672805847964e-06,
+    "truncated_at": 200000
   },
   {
     "tau_r": 0.01,
