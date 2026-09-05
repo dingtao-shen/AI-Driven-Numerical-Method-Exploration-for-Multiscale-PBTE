@@ -113,6 +113,23 @@ RTA-like (`TAU_N` large) through to hydrodynamic (`TAU_N` small).
 | 1e-02 | 1e+05 | 3 | 10x20 | GSIS | 26 | yes | 0.24996287 | 2.35e-04 | 0.7 | -- |
 | 1e-02 | 1e+05 | 3 | 10x20 | CIS | 16833 | yes | 0.24996612 | 9.55e-09 | 84.5 | -- |
 
+## Performance (§5)
+
+Shipped mesh: `N_TRIS = 200`, 800 directions, `DEG = 3`, single process. Sweep mode `precomputed` (128 MB of factorised element operators); GSIS global matrix 3840 x 3840 with 213760 nonzeros. Reproduce with `tools/benchmark.py`.
+
+| Quantity | Target | Measured | Margin |
+|---|---|---|---|
+| Setup (mesh, basis, integration, ordering, operator precompute) | < 30 s | **0.40 s** | 74x |
+| GSIS setup (HDG assembly + `splu`) | < 30 s | **0.32 s** | 93x |
+| Per CIS iteration | < 50 ms | **9.76 ms** | 5x |
+| Per GSIS iteration | < 150 ms | **12.70 ms** | 12x |
+| GSIS full run, `TAU_R=1e-3`, `TOL=1e-8` | < 60 s | **0.94 s** | 64x |
+| CIS full run, `TAU_R=1e-1`, `TOL=1e-8` | < 300 s | **3.25 s** | 92x |
+| Peak RSS | < 2048 MB | **803.13 MB** | 3x |
+
+All seven met. The two that matter for Proposal 2's task budget are the
+per-iteration costs, since an agent will run the solver many times inside
+a 10-15 minute verification window.
 ## Not converging is the point
 
 Cells marked **no (TMAX)** are not failures. CIS at `tau_R <= 1e-3` on

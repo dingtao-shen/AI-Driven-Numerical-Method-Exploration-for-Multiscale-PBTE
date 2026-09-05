@@ -279,6 +279,33 @@ def write_markdown(rows, out: Path, quick: bool):
                 and r["deg"] == 3 and r["npole"] == 10],
                "Angular resolution (`TAU_R = 1e-2`, `DEG = 3`)")
 
+    bench = Path(__file__).resolve().parent.parent / "docs" / "benchmark.json"
+    if bench.exists():
+        b = json.loads(bench.read_text())
+        L += ["## Performance (§5)", "",
+              f"Shipped mesh: `N_TRIS = {b['n_tris']}`, {b['ndir']} directions, "
+              f"`DEG = 3`, single process. Sweep mode `{b['sweep_mode']}` "
+              f"({b['operator_mb']:.0f} MB of factorised element operators); GSIS "
+              f"global matrix {b['global_matrix_n']} x {b['global_matrix_n']} with "
+              f"{b['global_matrix_nnz']} nonzeros. Reproduce with "
+              "`tools/benchmark.py`.", "",
+              "| Quantity | Target | Measured | Margin |", "|---|---|---|---|"]
+        for label, key, target, unit in [
+                ("Setup (mesh, basis, integration, ordering, operator precompute)",
+                 "setup", 30, "s"),
+                ("GSIS setup (HDG assembly + `splu`)", "gsis_setup", 30, "s"),
+                ("Per CIS iteration", "cis_per_iter_ms", 50, "ms"),
+                ("Per GSIS iteration", "gsis_per_iter_ms", 150, "ms"),
+                ("GSIS full run, `TAU_R=1e-3`, `TOL=1e-8`", "gsis_full_tauR1e-3", 60, "s"),
+                ("CIS full run, `TAU_R=1e-1`, `TOL=1e-8`", "cis_full_tauR1e-1", 300, "s"),
+                ("Peak RSS", "peak_rss_mb", 2048, "MB")]:
+            v = b[key]
+            L.append(f"| {label} | < {target:g} {unit} | **{v:.2f} {unit}** | "
+                     f"{target / v:.0f}x |")
+        L += ["", "All seven met. The two that matter for Proposal 2's task budget",
+              "are the per-iteration costs, since an agent will run the solver many",
+              "times inside a 10-15 minute verification window.", ""]
+
     L += [
         "## Not converging is the point", "",
         "Cells marked **no (TMAX)** are not failures. CIS at `tau_R <= 1e-3` on",

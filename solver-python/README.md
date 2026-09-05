@@ -213,10 +213,27 @@ additive shims (MKL/OpenMP no-ops, an optional dense PARDISO stand-in, the
 dump instrumentation) and applies the one correctness fix described above;
 `--no-fixes` reproduces the broken build.
 
+## Performance
+
+Shipped mesh, `DEG=3`, 20x40 ordinates, single process (`tools/benchmark.py`):
+
+| | target | measured |
+|---|---|---|
+| setup | < 30 s | 0.40 s |
+| per CIS iteration | < 50 ms | 9.8 ms |
+| per GSIS iteration | < 150 ms | 12.7 ms |
+| GSIS full run at `tau_R=1e-3` | < 60 s | 0.94 s |
+| peak RSS | < 2 GB | 803 MB |
+
+The element operator depends only on geometry, direction and `tau_C`, all
+iteration-invariant, so it is LU-factorised once (128 MB here) and each sweep
+is a triangular solve. `performance.precompute_inverse: false` trades that
+memory back for the reference's rebuild-every-iteration behaviour.
+
 ## Tests
 
 ```bash
-pytest tests/unit                    # ~30 s, no Fortran needed
+pytest tests/unit                    # ~60 s, no Fortran needed
 pytest tests/stage                   # needs fortran-reference/golden dumps
 pytest -m "not slow"                 # everything quick
 pytest                               # full, several minutes
