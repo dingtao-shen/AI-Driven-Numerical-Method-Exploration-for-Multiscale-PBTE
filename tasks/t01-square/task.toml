@@ -25,8 +25,8 @@ agent_seconds = 7200
 
 [grading]
 structure = "gates then score"
-gates = ["converged", "transport_residual", "field"]
-score = "geometric-mean speed-up in sweep-equivalents (end-to-end wall-clock / one fine sweep, both timed by the verifier in-session) over the unaccelerated solver, on cells where it is slow"
+gates = ["converged", "transport_residual", "field", "interface"]
+score = "geometric-mean speed-up in sweep-equivalents over the unaccelerated solver, on cells where it is slow; unit = min(submission's own fine sweep, verifier's fine sweep), both timed by the verifier in a single-threaded session"
 score_unit = "sweep-equivalents"
 reported_alongside = ["self_reported_sweeps", "peak_rss_mb"]
 

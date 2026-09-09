@@ -41,16 +41,23 @@ Grading has two parts: gates, which every case must pass, and a score.
    what this implies: stopping when successive iterates differ by `1e-8` is
    not the same as being within `1e-5` of the answer.
 
+4. **The sweep is still there.** `solver.ctx.sweep(solver.mom, solver.vdf)`
+   must remain callable and perform one full transport sweep from the
+   current moments; the grader times it.
+
 **Score**, only if every gate passes: the speed-up over the shipped solver
 on the cases where it is slow, combined as a geometric mean per family and
-then across families. Cost is measured in **sweep-equivalents**: the
-grader times your `Case.from_yaml + Solver(case) + run()` end to end — setup
-included — and divides by the time of one transport sweep, measured by the
-grader on the same machine in the same session. The shipped solver's cost
-is measured the same way. So a method that replaces sweeps with other work
-(a coarse solve, a factorisation, a direct solve) is charged for that work
-at what it actually costs, in sweep units. Your reported iteration count
-and peak memory are shown alongside the score but do not enter it.
+then across families. Cost is measured in **sweep-equivalents**: the grader
+times your `Case.from_yaml + Solver(case) + run()` end to end — setup
+included — and divides by the time of **your own** transport sweep, timed by
+the grader in the same single-threaded session (and capped by the grader's
+own sweep time). Making the sweep itself faster therefore gains nothing —
+the unit shrinks with the wall-clock — and making it slower is charged at
+the grader's unit. What moves the score is work *outside* the sweep: a
+coarse solve, a factorisation, a direct solve is charged at what it
+actually costs, in sweep units. The shipped solver's cost is measured the
+same way. Your reported iteration count and peak memory are shown alongside
+the score but do not enter it.
 
 The grader supplies its own copies of the case files and the mesh, so
 changing the discretisation, the angular resolution or the stopping
@@ -71,7 +78,7 @@ solver.vdf                         # the converged distribution, (ndir, n_tris, 
 
 `record.iterations` should count the transport sweeps your run performed; it
 is reported next to the score. Anything else in the package is yours to
-restructure.
+restructure — but note gate 4: the sweep stays callable as `solver.ctx.sweep`.
 
 ## Running things
 

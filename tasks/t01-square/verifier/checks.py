@@ -22,17 +22,24 @@ The design separates what is non-negotiable from what is a matter of degree.
 A family scores only if every one of its cells passes every gate; the
 benchmark scores only if every family does.
 
+4. *interface* -- ``solver.ctx.sweep(solver.mom, solver.vdf)`` is callable
+   and performs one fine transport sweep; the verifier times it to set the
+   unit below.
+
 **Score**: on the cells where the unaccelerated solver is slow, the speed-up
-over it in *sweep-equivalents*, combined as a geometric mean.  A
-sweep-equivalent is wall-clock divided by the time of one fine transport
-sweep, both measured by the verifier in the same session on the same
-machine: the submission's ``Case + Solver + run`` end to end (setup
-included), and the unaccelerated solver's setup plus its calibrated
-iteration count times a freshly timed seconds-per-iteration.  Work moved out
-of the sweep -- a low-order solve, a factorisation -- is therefore paid for
-at its actual cost, in sweep units; the self-reported sweep count is shown
-alongside but does not enter the score.  Where the unaccelerated solver
-never converged within its calibration cap the speed-up is a lower bound.
+over it in *sweep-equivalents*, combined as a geometric mean.  The
+submission's cost is its ``Case + Solver + run`` wall-clock (setup included)
+divided by **its own** fine-sweep time, both timed by the verifier in the
+same single-threaded session -- with the unit capped from above by the
+verifier's own sweep time.  Making the sweep faster shrinks the unit with
+the wall-clock and gains nothing; making it slower is charged in the
+verifier's unit; only work outside the sweep -- a low-order solve, a
+factorisation -- moves the number, and it is paid for at its actual cost in
+sweep units.  The unaccelerated side is its setup plus its calibrated
+iteration count times a freshly timed seconds-per-iteration, in the
+verifier's sweep units.  The self-reported sweep count is shown alongside
+but does not enter the score.  Where the unaccelerated solver never
+converged within its calibration cap the speed-up is a lower bound.
 
 Usage::
 
@@ -109,15 +116,24 @@ def score_cell(name, cell, env, pristine, spec, tmp):
     res["field_gap_worst"] = gap
     res["field_gap_max"] = cell["field_gap_max"]
     g["field"] = gap < cell["field_gap_max"]
+    g["interface"] = run.get("t_sweep_agent_s") is not None      # ctx.sweep callable
     res["passed"] = all(g.values())
 
-    # cost in sweep-equivalents, both sides measured in this session
-    unit = ev["t_sweep_s"]
+    # Cost in the submission's own sweep units, capped by the verifier's:
+    #   E_agent = wall / min(own sweep, pristine sweep)
+    # A faster sweep shrinks the unit with the wall-clock and gains nothing;
+    # a slower one is charged in the pristine unit.  Only work outside the
+    # sweep changes E_agent.  The unaccelerated side is in pristine units.
+    t_p = ev["t_sweep_s"]
+    t_a = run.get("t_sweep_agent_s") or t_p
+    unit = min(t_a, t_p)
+    res["t_sweep_agent_s"] = run.get("t_sweep_agent_s")
+    res["t_sweep_pristine_s"] = t_p
     res["sweep_equivalents"] = run["wall_total"] / unit
     n_cis = cell.get("cis_iterations")
     censored = n_cis is None
     n_cis = cell["cis_cap"] if censored else n_cis
-    res["cis_sweep_equivalents"] = (ev["cis_setup_s"] + n_cis * ev["cis_s_per_iter"]) / unit
+    res["cis_sweep_equivalents"] = (ev["cis_setup_s"] + n_cis * ev["cis_s_per_iter"]) / t_p
     res["scored"] = bool(cell.get("scored", False))
     if res["scored"]:
         res["speedup"] = res["cis_sweep_equivalents"] / max(res["sweep_equivalents"], 1e-9)

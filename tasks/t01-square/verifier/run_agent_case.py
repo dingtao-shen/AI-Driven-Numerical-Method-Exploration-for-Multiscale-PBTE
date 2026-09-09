@@ -60,11 +60,32 @@ rec = solver.run()
 wall_total = time.perf_counter() - t0
 
 np.savez_compressed(out, vdf=np.asarray(solver.vdf), temp=np.asarray(rec.temp))
+
+# -- the unit: one fine sweep *in this tree*, warm, median of five ----------
+# The score is in the submission's own sweep units, so making the sweep
+# faster buys nothing and only work outside the sweep is charged.  The
+# verifier caps this from above by its own sweep time, so making it slower
+# buys nothing either.  Part of the interface contract; absent => gate fails.
+t_sweep = None
+sweep_note = ""
+try:
+    solver.ctx.sweep(solver.mom, solver.vdf)                      # warm
+    ts = []
+    for _ in range(5):
+        t0 = time.perf_counter()
+        solver.ctx.sweep(solver.mom, solver.vdf)
+        ts.append(time.perf_counter() - t0)
+    t_sweep = float(np.median(ts))
+except Exception as e:                                            # noqa: BLE001
+    sweep_note = f"solver.ctx.sweep unavailable: {type(e).__name__}: {e}"
+
 print(json.dumps({
     "iterations": int(rec.iterations),
     "converged": bool(rec.converged),
     "mass": float(rec.mass),
     "wall_total": wall_total,
+    "t_sweep_agent_s": t_sweep,
+    "sweep_note": sweep_note,
     "max_rss_mb": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0,
     "warm_up": warm_note or "ok",
 }))
