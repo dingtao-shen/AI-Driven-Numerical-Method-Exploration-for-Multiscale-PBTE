@@ -1,6 +1,6 @@
 # t01-square — k=5 under the sweep-equivalent rule, Claude Opus 5 + Claude Code
 
-Run started 2026-09-09. Score = speed-up in sweep-equivalents (end-to-end
+Run started 2026-09-09; **halted after trial 1 and during trial 2** to reconsider the rule (see Observations). Trials 3–5 were not run. Score = speed-up in sweep-equivalents (end-to-end
 wall-clock of `Case + Solver + run` over the time of one fine sweep, both
 timed by the verifier in-session, setup included), as stated in `task.md`.
 Sandboxes under `~/rollout-sandboxes/t01-square-C/`; each trial's solution
@@ -13,7 +13,7 @@ was taken under unpinned grading.
 | trial | gate | score | min | turns | cost | what the delivered tree contains |
 |---|---|---|---|---|---|---|
 | 1 | FAIL 0/10 | — | 120 (cap) | — | — | **Timed out mid-edit; every cell crashed** (`_bte.so: undefined symbol: bte_set_threads`). The diff shows compiled **C kernels** for the sweep (`_csrc/bte.c`, a ctypes binding with thread control, a build script), plus `krylov.py` and a low-resolution preconditioner `lowres.py`. The `.so` was stale against the C source when the cap hit, and the binding's "fall back if the library will not load" guard did not cover a missing symbol. Graded as left. |
-| 2 | | | | | | |
+| 2 | — (interrupted) | — | ~60 (stopped) | — | — | **Stopped by the operator** before it finished (run halted to reconsider the rule). As left: a new `accel.py` (moment system, low-order operator, GMRES — the same family as the sweep-count run's solutions) not yet wired into the driver, so the graded tree ran plain source iteration. Not a valid trial. Sanity check of the unit: on that unmodified iteration, sweep-equivalents track sweep counts (16 712 vs 16 830; 341 vs 317). |
 | 3 | | | | | | |
 | 4 | | | | | | |
 | 5 | | | | | | |
