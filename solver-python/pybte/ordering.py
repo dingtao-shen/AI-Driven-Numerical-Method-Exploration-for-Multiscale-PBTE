@@ -14,7 +14,7 @@ reproduced *exactly*, not merely validly:
 Any other valid topological order would still converge, but to a different
 iterate sequence, and every iteration count downstream would drift.
 
-Deviation §7.7: the Fortran's ``DO`` loop has no cycle detection and spins
+The Fortran's ``DO`` loop has no cycle detection and spins
 forever if a direction produces a cyclic dependency.  Here a pass that emits
 nothing raises :class:`SweepCycleError` by default; ``on_cycle='break'``
 instead emits the element with the fewest incoming faces (lagging its inflow

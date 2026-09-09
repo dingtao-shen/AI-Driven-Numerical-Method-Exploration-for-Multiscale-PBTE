@@ -1,4 +1,4 @@
-"""§6.1 unit level: the precomputed integral tensors, checked against
+"""The precomputed integral tensors, checked against
 independently computed quadrature rather than against the Fortran."""
 from __future__ import annotations
 

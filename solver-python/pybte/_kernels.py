@@ -5,7 +5,7 @@ Two things in here need explaining.
 **Why hand-rolled LU.**  The Fortran calls ``DGETRF``/``DGETRS`` per element
 per direction per iteration.  Those factorisations depend only on geometry,
 direction and ``TAU_C``, all iteration-invariant, so we hoist them out of the
-loop (§Phase 5.1).  A batched LAPACK call would be ideal but scipy has none,
+loop.  A batched LAPACK call would be ideal but scipy has none,
 and 160k tiny factorisations through the Python layer costs more than the
 sweep itself.  The kernels below reproduce LAPACK's unblocked ``DGETF2`` and
 ``DTRSM`` *operation for operation*:
@@ -171,7 +171,7 @@ def _fill_a_src(src, i, cxd, cyd, cv, vg, tau_r, tau_n, pi,
 def _add_face_sources(src, i, d, cxd, cyd, cv, pi,
                       ttfc, nx, ny, tri_faces, face_bc, neighbour,
                       periodic_tri, bc_type, bc_temp, flux_wall, vdf):
-    """Upwind inflow, dispatching on the boundary type (§7.1)."""
+    """Upwind inflow, dispatching on the boundary type."""
     nd = src.shape[0]
     for il in range(3):
         speed = cxd * nx[i, il] + cyd * ny[i, il]
@@ -258,7 +258,7 @@ def sweep_onthefly(order, cxv, cyv, cv, vg, tau_r, tau_n, tau_c, pi,
 
 
 # ---------------------------------------------------------------------------
-# residual of the discrete transport system (§7.6)
+# residual of the discrete transport system
 # ---------------------------------------------------------------------------
 @njit(cache=True, parallel=True)
 def transport_residual(cxv, cyv, domega, cv, vg, tau_r, tau_n, tau_c, pi,
@@ -354,7 +354,7 @@ def wall_flux_kernel(vdf, cxv, cyv, domega, fcm, nx, ny,
                      face_bc, face_tri, face_lfc, bc_type, flux_wall):
     """``Calculate_FLUX_WALL`` -- the diffuse (adiabatic) wall emission that
     makes the net normal energy flux vanish.  Dead code in the Fortran; wired
-    in here (§7.1)."""
+    in here."""
     n_faces = face_bc.shape[0]
     ndir = cxv.shape[0]
     nd = fcm.shape[2]

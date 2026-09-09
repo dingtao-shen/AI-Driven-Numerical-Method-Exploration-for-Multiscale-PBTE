@@ -29,7 +29,7 @@ __all__ = ["correct_vdf"]
 @njit(cache=True, parallel=True)
 def _correct_kernel(vdf, uq, cxv, cyv, domega, int_tri, tri_hmin,
                     cv, vg, tau_r, tau_n, tau_c, tau_thr, pi, nd,
-                    use_hmin, ts, qxs, qys, temp, qx, qy):
+                    use_hmin, ts, qxs, qys, temp, qx, qy, defect, mkin):
     n_tris = vdf.shape[1]
     ndir = vdf.shape[0]
     drift = tau_c / tau_n * 3.0 / 4.0 / pi / vg / vg
@@ -52,10 +52,15 @@ def _correct_kernel(vdf, uq, cxv, cyv, domega, int_tri, tri_hmin,
                 qx_vdf += cxv[d] * f * domega[d]
                 qy_vdf += cyv[d] * f * domega[d]
             t_vdf = t_vdf / cv
+            mkin[m, i] = t_vdf
+            mkin[nd + m, i] = qx_vdf
+            mkin[2 * nd + m, i] = qy_vdf
 
-            l_t = (uq[m, i] - t_vdf) * beta
-            l_qx = (uq[nd + m, i] - qx_vdf) * beta
-            l_qy = (uq[2 * nd + m, i] - qy_vdf) * beta
+            # ``defect`` is zero for the shipped scheme, in which case these
+            # three lines are the damped blend unchanged.
+            l_t = (uq[m, i] - defect[m, i] - t_vdf) * beta
+            l_qx = (uq[nd + m, i] - defect[nd + m, i] - qx_vdf) * beta
+            l_qy = (uq[2 * nd + m, i] - defect[2 * nd + m, i] - qy_vdf) * beta
 
             eq = l_t * cv / 4.0 / pi
             for d in range(ndir):
@@ -72,9 +77,22 @@ def _correct_kernel(vdf, uq, cxv, cyv, domega, int_tri, tri_hmin,
 
 def correct_vdf(vdf, uq, cxv, cyv, domega, int_tri, tri_hmin, cv, vg,
                 tau_r, tau_n, tau_c, tau_thr, pi, ndof_tri, mom,
-                use_hmin: bool = True):
+                use_hmin: bool = True, defect=None, mkin=None):
+    """``defect``/``mkin`` are ``(3*ndof_tri, n_tris)``.
+
+    ``defect`` is subtracted from the macroscopic solution before the blend;
+    passing zeros (or ``None``) gives the shipped blend exactly.
+    ``mkin`` receives the kinetic moments ``T, qx, qy`` per DOF, which the
+    caller needs to update the defect and which are computed here anyway.
+    """
+    import numpy as _np
+
+    if defect is None:
+        defect = _np.zeros((3 * ndof_tri, vdf.shape[1]))
+    if mkin is None:
+        mkin = _np.empty((3 * ndof_tri, vdf.shape[1]))
     _correct_kernel(vdf, uq, cxv, cyv, domega, int_tri, tri_hmin,
                     cv, vg, tau_r, tau_n, tau_c, tau_thr, pi, ndof_tri,
                     use_hmin, mom.ts, mom.qxs, mom.qys,
-                    mom.temp, mom.qx, mom.qy)
+                    mom.temp, mom.qx, mom.qy, defect, mkin)
     return mom

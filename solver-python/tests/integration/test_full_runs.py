@@ -1,4 +1,4 @@
-"""§6.3 integration level: properties of a full run.
+"""Properties of a full run.
 
 Numerical agreement with the Fortran reference is frozen in
 ``test_regression.py``; these are the physical and structural properties that
@@ -90,7 +90,7 @@ def test_gsis_mass_tracks_cis_not_the_diffusion_limit():
 
 
 def test_run_record_is_complete():
-    """§8: a verifier must never need to parse stdout."""
+    """A verifier must never need to parse stdout."""
     rec = Solver(_case(tau_r=1.0, accflag=1)).run()
     for f in ("iterations", "converged", "residual_history", "temp", "qx", "qy",
               "temp_dofs", "sweep_count", "factorisation_count", "wall_clock",

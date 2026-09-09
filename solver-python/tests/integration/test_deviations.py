@@ -1,7 +1,7 @@
-"""§7: every deviation from the Fortran, individually tested.
+"""Every deviation from the Fortran, individually tested.
 
-The proposal lists seven allowed deviations. Each one gets a test that would
-fail if the deviation were reverted or mis-implemented; §7.8 (indexing, YAML,
+Seven deliberate deviations from the Fortran. Each one gets a test that would
+fail if the deviation were reverted or mis-implemented; the eighth (indexing, YAML,
 output formats) is covered by the unit tests instead.
 """
 from __future__ import annotations
@@ -28,12 +28,12 @@ def _case(name, **kw):
 
 
 # ---------------------------------------------------------------------------
-# §7.1  boundary-condition dispatch
+# boundary-condition dispatch
 # ---------------------------------------------------------------------------
 @pytest.mark.slow
 @pytest.mark.parametrize("accflag", [0, 1])
 def test_nonthermalising_wall_conserves_energy(accflag):
-    """§7.1: a diffusely reflecting wall emits exactly what makes its own net
+    """A diffusely reflecting wall emits exactly what makes its own net
     normal heat flux vanish, so that flux must be zero to *round-off* -- the
     emission is constructed from the balance, not approximated.
 
@@ -97,7 +97,7 @@ def test_symmetry_bc_is_rejected():
 
 
 # ---------------------------------------------------------------------------
-# §7.2  acceleration variants
+# acceleration variants
 # ---------------------------------------------------------------------------
 @pytest.mark.slow
 def test_variant_b_is_selectable_and_diverges():
@@ -122,7 +122,7 @@ def test_variant_a_and_b_build_different_matrices():
 
 
 # ---------------------------------------------------------------------------
-# §7.4  linear-time assembly
+# linear-time assembly
 # ---------------------------------------------------------------------------
 def test_assembly_is_subquadratic_in_face_count():
     """The reference is O(N_FCS^2); ours must not be.  Compare the ratio of
@@ -142,7 +142,7 @@ def test_assembly_is_subquadratic_in_face_count():
 
 
 # ---------------------------------------------------------------------------
-# §7.5  stabilisation exposed
+# stabilisation exposed
 # ---------------------------------------------------------------------------
 def test_stabilisation_is_configurable():
     base = Solver(_case("cavity_tauR1e-3_gsis.yaml"))
@@ -169,7 +169,7 @@ def test_stabilisation_does_not_move_the_gsis_answer_much():
 
 
 # ---------------------------------------------------------------------------
-# §7.6  true residual alongside the iterate residual
+# true residual alongside the iterate residual
 # ---------------------------------------------------------------------------
 @pytest.mark.slow
 def test_true_residual_is_reported_and_does_not_change_the_stopping_rule():
@@ -225,7 +225,7 @@ def test_true_residual_separates_gsis_from_cis():
 
 @pytest.mark.slow
 def test_error_estimate_exposes_pseudo_convergence():
-    """§7.6's real content: the stopping criterion measures a step, so the
+    """The real content of the true residual: the stopping criterion measures a step, so the
     error has to be estimated from the observed contraction factor.
 
     Truncate CIS well short of convergence and check that the estimate lands
@@ -252,7 +252,7 @@ def test_error_estimate_exposes_pseudo_convergence():
 
 
 # ---------------------------------------------------------------------------
-# §7.7  sweep cycles
+# sweep cycles
 # ---------------------------------------------------------------------------
 def test_on_cycle_is_configurable():
     c = _case("cavity_tauR1e-3_cis.yaml", **{"scheme.on_cycle": "break"})

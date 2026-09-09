@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Quantify the CIS/GSIS fixed-point discrepancy.
 
-Proposal 1 §10 asserts, as "the load-bearing property for the whole
-benchmark", that CIS and GSIS converge to the same *discrete* fixed point to
-``rtol=1e-8``.  They do not, in the reference or in this port.  This script
-measures by how much, and how that gap scales, so that Proposal 2 can be
-written against what the solver actually does.
+CIS and GSIS do not converge to the same *discrete* fixed point.  Any grading
+scheme that assumes they do -- "the accelerated answer must equal the
+unaccelerated one to ``rtol=1e-8``" -- will reject a correct implementation.
+This script measures by how much they differ and how that gap scales.
 
 Three numbers per configuration:
 

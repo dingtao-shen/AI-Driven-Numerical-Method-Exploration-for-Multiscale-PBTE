@@ -1,4 +1,4 @@
-"""Boundary conditions -- ``Boundary_Conditions.f90`` plus deviation §7.1.
+"""Boundary conditions -- ``Boundary_Conditions.f90`` with the dispatch wired up.
 
 In the Fortran, ``Solvers.f90``'s boundary branch is entirely commented out:
 the *thermalising* formula is applied unconditionally to every boundary face,
@@ -65,7 +65,7 @@ def boundary_heat_flux(solver) -> np.ndarray:
     outgoing half-space is integrated from the element's own trace, the
     incoming half-space from whatever the wall emits.  For a diffusely
     reflecting (adiabatic) wall the emission is constructed precisely so that
-    the two cancel, so this is a sharp test of the §7.1 implementation, not a
+    the two cancel, so this is a sharp test of the dispatch, not a
     loose one -- it should return zero to round-off, not to discretisation
     error.
 

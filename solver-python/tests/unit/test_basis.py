@@ -1,4 +1,4 @@
-"""§6.1 unit level: nodal bases."""
+"""Nodal bases."""
 from __future__ import annotations
 
 import numpy as np

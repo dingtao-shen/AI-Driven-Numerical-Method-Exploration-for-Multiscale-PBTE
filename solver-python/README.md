@@ -37,7 +37,7 @@ record = solver.run()
 record.iterations          # int
 record.converged           # bool
 record.residual_history    # (n_iter,)  the original iterate residual
-record.residual_true       # (n_iter,) or None -- a real residual, see §7.6
+record.residual_true       # (n_iter,) or None -- a true transport residual
 record.temp, record.qx, record.qy        # (n_tris,) element integrals
 record.temp_dofs                          # (ndof_tri, n_tris)
 record.sweep_count         # hardware-independent work metric
@@ -122,6 +122,8 @@ them now that the reference is gone.
 ## Two things you should know before trusting a result
 
 Both are documented in full in **`docs/LIMITATIONS.md`**, along with two more.
+The accelerated path that keeps CIS's fixed point is `scheme.method: krylov`
+(`docs/KRYLOV.md`); `docs/DEFECT_CORRECTION.md` is an earlier experimental repair.
 
 **1. GSIS does not converge to the same discrete fixed point as CIS.** Both
 schemes reach `residual_iterate < 1e-13`, but the *true* transport residual is
@@ -130,11 +132,10 @@ point and GSIS is not. Their converged fields differ by 1.7e-2 at
 `tau_R = 1e-1` — in the Fortran as well as here. The cause is structural: the
 macroscopic system is discretised by HDG while the kinetic one is upwind DG,
 and the gap does **not** close under mesh or order refinement (only as
-`tau_R → 0`). Proposal 1 §10 lists agreement to `rtol=1e-8` as "the
-load-bearing property for the whole benchmark"; **it does not hold**, and
-anything built on this solver needs to grade against the true residual and the
-analytic limit instead. `tools/fixed_point_study.py` reproduces the
-measurement.
+`tau_R → 0`). Anything built on this solver must grade against the true
+residual and the analytic limit rather than against the other scheme's answer.
+`tools/fixed_point_study.py` reproduces the measurement; `scheme.defect_omega`
+is an off-by-default repair (`docs/DEFECT_CORRECTION.md`).
 
 **2. Do not trust a CIS residual.** The stopping criterion measures the *step*
 between iterates, not the *error*, and source iteration's contraction factor
@@ -189,7 +190,7 @@ pybte/
 cases/  meshes/  docs/  tests/{unit,integration}
 tools/
   make_meshes.py        mesh family (reproduces the original shipped mesh)
-  benchmark.py          the §5 performance targets
+  benchmark.py          the performance targets
   validation_sweep.py   regenerates VALIDATION.md
   fixed_point_study.py  measures the CIS/GSIS gap and how it scales
 ```
@@ -208,5 +209,9 @@ The slow half is `tests/integration/test_regression.py`, which re-runs the
 converged cases and checks their iteration counts and masses against frozen
 values. Several of those are CIS runs of 16 000+ iterations.
 
-`docs/`: **`LIMITATIONS.md`** (read this one), `EQUATIONS.md` (model and
+`docs/`: **`LIMITATIONS.md`** (read this one), `KRYLOV.md` (GMRES on the
+outer iteration: same fixed point as CIS, `scheme.method: krylov`),
+`DEFECT_CORRECTION.md` (experimental repair of the GSIS fixed point, off by
+default),
+`EQUATIONS.md` (model and
 discretisation), `INDEXING.md` (the array-layout conventions).

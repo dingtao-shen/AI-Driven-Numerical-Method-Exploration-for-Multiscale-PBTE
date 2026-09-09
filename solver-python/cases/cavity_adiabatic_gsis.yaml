@@ -1,5 +1,5 @@
 # Hot north wall, cold south wall, diffusely reflecting (adiabatic) side walls.
-# Exercises the non-thermalising branch of the BC dispatch (§7.1), which is
+# Exercises the non-thermalising branch of the BC dispatch, which is
 # dead code in the Fortran: Calculate_FLUX_WALL exists but is never called.
 # The net normal heat flux through each adiabatic face must vanish.
 iteration:  {tol: 1.0e-8, tmax: 200000}

@@ -1,4 +1,6 @@
-"""§Phase-5 gate: the jitted kernels must match the plain reference exactly.
+"""The jitted kernels must match the plain reference exactly.
+
+Gate: the jitted kernels must match the plain reference exactly.
 
 An optimisation that quietly changes the arithmetic -- a different LU, a
 reassociated reduction, an inverse instead of a solve -- would otherwise slip

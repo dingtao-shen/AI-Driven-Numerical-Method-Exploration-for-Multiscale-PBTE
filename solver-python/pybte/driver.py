@@ -12,9 +12,9 @@
     END DO
 
 Nothing about that structure changes in the port.  What is added around it:
-an explicit restart contract (§7.3), an optional true residual (§7.6), and a
+an explicit restart contract, an optional true residual, and a
 :class:`~pybte.io_output.RunRecord` complete enough that a verifier never has
-to parse stdout (§8).
+to parse stdout.
 """
 from __future__ import annotations
 
@@ -96,7 +96,7 @@ class Solver:
 
         self.setup_seconds = time.perf_counter() - t0
 
-    # -- restart (§7.3) ----------------------------------------------------
+    # -- restart ----------------------------------------------------
     def _restart_stem(self) -> str:
         c = self.case
         return (f"VDFP{c.dg.deg}T{self.n_tris:3d}"
@@ -162,6 +162,13 @@ class Solver:
 
     # -- the outer loop -----------------------------------------------------
     def run(self, callback=None, progress_every: int = 0) -> RunRecord:
+        if self.case.scheme.method == "krylov":
+            from .krylov import run_krylov
+            return run_krylov(self, callback, progress_every)
+        return self._run_source(callback, progress_every)
+
+    def _run_source(self, callback=None, progress_every: int = 0) -> RunRecord:
+        """Source iteration: ``Calculate_Residual_T < tol``, as the Fortran."""
         c = self.case
         tol, tmax = c.iteration.tol, c.iteration.tmax
         want_true = c.iteration.true_residual
@@ -190,16 +197,31 @@ class Solver:
             if callback is not None:
                 callback(step, res, self)
             if res < tol:
+                # With a frozen defect (scheme.defect_every = 0) reaching the
+                # inner fixed point is not the end: refresh the defect, which
+                # moves the fixed point, and carry on.  Convergence is when
+                # both the iterate and the defect have stopped moving.
+                if (self.acc is not None and self.acc.omega
+                        and not self.acc.defect_every
+                        and self.acc.refresh_defect() > tol):
+                    continue
                 converged = True
                 break
             if step >= tmax:
                 break
         wall = time.perf_counter() - t0
+        return self._record(step, converged, residuals, masses,
+                            true_res if want_true else None, wall,
+                            scheme="GSIS" if c.scheme.accflag == 1 else "CIS")
 
+    def _record(self, iterations, converged, residuals, masses, true_res, wall,
+                scheme, extra=None) -> RunRecord:
+        """Assemble the run record from the solver's current state."""
+        c = self.case
         rec = RunRecord(
-            iterations=step, converged=converged,
+            iterations=iterations, converged=converged,
             residual_history=np.asarray(residuals),
-            residual_true=np.asarray(true_res) if want_true else None,
+            residual_true=np.asarray(true_res) if true_res is not None else None,
             mass_history=np.asarray(masses),
             temp=self.mom.temp.copy(), qx=self.mom.qx.copy(), qy=self.mom.qy.copy(),
             temp_dofs=self.mom.ts.copy(), qx_dofs=self.mom.qxs.copy(),
@@ -208,9 +230,10 @@ class Solver:
             factorisation_count=self.factorisation_count,
             wall_clock=wall, setup_wall_clock=self.setup_seconds,
             config_hash=c.config_hash,
-            scheme="GSIS" if c.scheme.accflag == 1 else "CIS",
+            scheme=scheme,
             acc_variant=c.scheme.acc_variant if c.scheme.accflag == 1 else None,
-            tol=tol, tmax=tmax, tau_r=c.flow.tau_r, tau_n=c.flow.tau_n,
+            tol=c.iteration.tol, tmax=c.iteration.tmax,
+            tau_r=c.flow.tau_r, tau_n=c.flow.tau_n,
             tau_c=c.tau_c, deg=c.dg.deg, npole=c.velmesh.npole,
             nazim=c.velmesh.nazim, n_tris=self.n_tris, n_faces=self.mesh.n_faces,
             mesh_file=str(c.mesh_path()),
@@ -226,6 +249,8 @@ class Solver:
         )
         if self.acc is not None:
             rec.diagnostics.update(self.acc.diagnostics())
+        if extra:
+            rec.diagnostics.update(extra)
         return rec
 
     # -- output -------------------------------------------------------------

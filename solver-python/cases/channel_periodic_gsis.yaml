@@ -1,5 +1,5 @@
 # Cross-plane conduction: periodic in x, thermalising walls in y.
-# Exercises the periodic branch of the BC dispatch (§7.1), which is dead code
+# Exercises the periodic branch of the BC dispatch, which is dead code
 # in the Fortran.  The converged field must be independent of x, and in the
 # diffusive limit T -> y.
 iteration:  {tol: 1.0e-8, tmax: 200000}

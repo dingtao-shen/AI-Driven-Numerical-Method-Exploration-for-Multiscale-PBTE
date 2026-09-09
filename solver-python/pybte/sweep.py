@@ -150,7 +150,7 @@ class SweepContext:
                 self.bc_temp, self.flux_wall, mom.ts, mom.qxs, mom.qys, vdf)
         self.sweep_count += 1
 
-    # -- §7.6 --------------------------------------------------------------
+    # -- true transport residual --------------------------------------------------------------
     def true_residual(self, mom, vdf) -> float:
         """``||A_SOL f - A_SRC|| / ||A_SRC||`` in the solid-angle-weighted
         L2 norm, evaluated at the current state with *no* sweep applied.

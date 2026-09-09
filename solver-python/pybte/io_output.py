@@ -1,4 +1,4 @@
-"""Run record and field output -- ``Out_Put_Result.f90`` plus §8.
+"""Run record and field output -- ``Out_Put_Result.f90``.
 
 Three artefacts come out of a run:
 
@@ -29,7 +29,8 @@ __all__ = ["RunRecord", "sampling_grid", "locate_points", "sample_fields",
 # ---------------------------------------------------------------------------
 @dataclass
 class RunRecord:
-    """The §8 interface.  Do not change field names casually."""
+    """The machine-readable run interface.  Do not change field names
+    casually -- downstream verifiers read them."""
     iterations: int = 0
     converged: bool = False
     residual_history: np.ndarray = field(default_factory=lambda: np.zeros(0))

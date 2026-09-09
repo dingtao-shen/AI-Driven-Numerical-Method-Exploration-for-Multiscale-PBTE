@@ -1,4 +1,4 @@
-"""§6.1 unit level: mesh topology and geometry."""
+"""Mesh topology and geometry."""
 from __future__ import annotations
 
 import numpy as np

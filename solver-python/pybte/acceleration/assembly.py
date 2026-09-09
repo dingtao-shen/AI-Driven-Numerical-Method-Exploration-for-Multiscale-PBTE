@@ -20,13 +20,13 @@ right-hand side changes from iteration to iteration.
 
 Two deviations from the Fortran are implemented here:
 
-§7.2  Both rescalings are available.  Variant A (the Makefile's) keeps
+Both rescalings are available.  Variant A (the Makefile's) keeps
       ``OO/TAU_R`` in the momentum block, which blows up as ``TAU_R -> 0``;
       variant B multiplies the temperature and stress couplings by ``TAU_R``
       instead, leaving ``OO + ST*PP``.  Algebraically the same system,
       very different conditioning.
 
-§7.4  The Fortran zeroes a dense ``(3*NDOF_FC, N_FCS*3*NDOF_FC)`` row-block
+The Fortran zeroes a dense ``(3*NDOF_FC, N_FCS*3*NDOF_FC)`` row-block
       workspace inside the loop over faces, which makes assembly quadratic in
       face count.  Here each face's row block is accumulated into a small dict
       of column blocks and emitted straight to COO triplets, so assembly is
@@ -199,7 +199,7 @@ def mirror_permutation(ndof_fc: int) -> np.ndarray:
 
 def assemble_global_matrix(mesh, integrals, ba_sol, aa_trace, ndof_fc,
                            bc_type, drop_tol=1e-30, periodic_flip=None):
-    """Assemble the sparse trace system directly into COO triplets (§7.4).
+    """Assemble the sparse trace system directly into COO triplets.
 
     Returns ``(csr_matrix, nnz_before_drop)``.
     """
@@ -235,7 +235,7 @@ def assemble_global_matrix(mesh, integrals, ba_sol, aa_trace, ndof_fc,
             t1, l1 = mesh.adjacent(f)
             t2, l2 = mesh.adjacent(int(mesh.face_pair[f]))
             # the partner's equation rows are written in *its* face basis, so
-            # they must be mirrored back into this face's basis (§7.1)
+            # they must be mirrored back into this face's basis
             pairs = [(t1, l1, False), (t2, l2, flip)]
         else:
             t1, l1 = mesh.adjacent(f)

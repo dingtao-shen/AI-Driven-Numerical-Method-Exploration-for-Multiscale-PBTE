@@ -3,7 +3,7 @@
 ``pybte`` runs correctly without numba -- every jitted kernel has a pure
 Python/numpy twin and the test suite checks that the two agree.  When numba
 *is* installed the sweep and the ordering pass use it, which is what makes
-the per-iteration targets in §5 of the proposal reachable.
+the per-iteration performance targets reachable.
 """
 from __future__ import annotations
 

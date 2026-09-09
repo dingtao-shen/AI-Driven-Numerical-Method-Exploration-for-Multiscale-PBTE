@@ -1,4 +1,4 @@
-"""§6.1 unit level: the per-direction sweep ordering (§7.7 included)."""
+"""The per-direction sweep ordering, cycle handling included."""
 from __future__ import annotations
 
 import numpy as np
@@ -70,7 +70,7 @@ def test_tie_breaking_is_ascending_index(shipped_mesh, order):
 
 
 def test_cycle_detection_raises(monkeypatch, shipped_mesh):
-    """§7.7: the Fortran's loop spins forever on a cyclic direction.  We
+    """The Fortran's loop spins forever on a cyclic direction.  We
     construct one by lying about the neighbour graph and check we raise."""
     import copy
 

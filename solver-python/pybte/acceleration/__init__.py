@@ -12,7 +12,7 @@ One outer iteration adds four stages after the transport sweep:
    solution back into the distribution, damped by ``beta``.
 
 The whole thing is behind this one class so that the CIS path and the GSIS
-path stay cleanly separable at the module boundary (goal G4): with
+path stay cleanly separable at the module boundary: with
 ``accflag = 0`` nothing in this package is imported at all.
 """
 from __future__ import annotations
@@ -78,6 +78,19 @@ class Acceleration:
         self.scale = c.flow.tau_r if self.variant == "B" else 1.0
         self.use_hmin = (self.variant == "A")
 
+        # Experimental fixed-point repair (docs/DEFECT_CORRECTION.md).  The
+        # shipped scheme is omega = 0, where ``defect`` stays identically
+        # zero and every arithmetic operation below is a no-op.
+        self.omega = c.scheme.defect_omega
+        self.defect_every = c.scheme.defect_every
+        self._ncall = 0
+        self.defect_steps: list[float] = []
+        self.anderson = c.scheme.defect_anderson
+        self._and_d: list[np.ndarray] = []
+        self._and_g: list[np.ndarray] = []
+        self.defect = np.zeros((3 * self.nd, solver.n_tris))
+        self.mkin = np.empty((3 * self.nd, solver.n_tris))
+
     # -- one acceleration cycle -------------------------------------------
     def apply(self) -> None:
         s = self.solver
@@ -95,7 +108,68 @@ class Acceleration:
                     s.integrals.int_tri, s.mesh.tri_hmin,
                     c.flow.cv, c.flow.vg, c.flow.tau_r, c.flow.tau_n,
                     c.tau_c, c.flow.tau_thr, PI, self.nd, s.mom,
-                    use_hmin=self.use_hmin)
+                    use_hmin=self.use_hmin, defect=self.defect,
+                    mkin=self.mkin)
+        self._ncall += 1
+        if self.omega and self.defect_every and self._ncall % self.defect_every == 0:
+            self.refresh_defect()
+
+    # -- the fixed-point repair -------------------------------------------
+    def refresh_defect(self) -> float:
+        """Relax ``defect`` onto the current offset; return how far it moved.
+
+        ``o = M* - M(f)`` is the bracket the damped blend mixes in.  At a fixed
+        it is stationary and non-zero -- that offset *is* the CIS/GSIS
+        displacement.  Subtracting a converged estimate of it makes the blend
+        vanish there, so the fixed point becomes ``M = M(f)``: CIS's.
+
+        Called every ``defect_every`` iterations, or -- with
+        ``defect_every = 0`` -- only once the inner iteration has converged
+        with the defect held frozen.  Freezing matters: a defect refreshed
+        every step lags the iteration by one, which costs the whole
+        acceleration (measured 1354 iterations against 49).  Held frozen, the
+        iteration matrix is exactly the shipped scheme's and only the fixed
+        point moves.
+        """
+        o = self.uq[:3 * self.nd] - self.mkin
+        step = float(np.abs(o - self.defect).max())
+        if self.anderson:
+            self._anderson_step(o)
+        else:
+            self.defect += self.omega * (o - self.defect)
+        self.defect_steps.append(step)
+        return step
+
+    def _anderson_step(self, o) -> None:
+        """Anderson (type II) on the outer sequence ``d -> o(d)``.
+
+        Everything from the sweep through the HDG solve to the blend is linear
+        in the state, so the map ``d -> o(d)`` is affine and Anderson is exact
+        arithmetic on it rather than a heuristic.  The window is small because
+        each entry costs a full inner convergence.
+        """
+        self._and_d.append(self.defect.ravel().copy())
+        self._and_g.append(o.ravel().copy())
+        if len(self._and_d) > self.anderson + 1:
+            self._and_d.pop(0)
+            self._and_g.pop(0)
+        m = len(self._and_d)
+        if m == 1:
+            self.defect += self.omega * (o - self.defect)
+            return
+        D = np.asarray(self._and_d)
+        G = np.asarray(self._and_g)
+        R = G - D                                  # fixed-point residuals
+        dR = (R[1:] - R[:-1]).T                    # n x (m-1)
+        gamma, *_ = np.linalg.lstsq(dR, R[-1], rcond=None)
+        dG = (G[1:] - G[:-1]).T
+        new = G[-1] - dG @ gamma
+        if not np.all(np.isfinite(new)):           # ill-conditioned window
+            self._and_d.clear()
+            self._and_g.clear()
+            self.defect += self.omega * (o - self.defect)
+            return
+        self.defect[:] = new.reshape(self.defect.shape)
 
     # -- diagnostics / cross-validation ------------------------------------
     def diagnostics(self) -> dict:
@@ -105,6 +179,11 @@ class Acceleration:
             "global_matrix_nnz": int(self.K.nnz),
             "global_solve_count": int(self.gsolver.solve_count),
             "stabilisation": [float(v) for v in self.st],
+            "defect_omega": float(self.omega),
+            "defect_every": int(self.defect_every),
+            "defect_anderson": int(self.anderson),
+            "defect_outer": len(self.defect_steps),
+            "defect_norm": float(np.abs(self.defect).max()),
         }
 
     def global_matrix(self):
@@ -122,7 +201,7 @@ class Acceleration:
     def condition_estimate(self) -> float:
         """1-norm condition estimate of the global trace matrix.
 
-        Used to compare the two acceleration variants (§7.2): they are
+        Used to compare the two acceleration variants: they are
         algebraically the same system and differ only in conditioning as
         ``TAU_R -> 0``.  Both factors are Higham-Tisseur estimates, so this is
         an estimate of a bound, not the condition number itself.

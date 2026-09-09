@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the §6.5 cross-validation sweep and emit VALIDATION.md.
+"""Run the cross-validation sweep and emit VALIDATION.md.
 
 Sweeps ``TAU_R x TAU_N x DEG x (NPOLE,NAZIM) x scheme`` and, wherever a
 matching Fortran golden run exists, compares iteration counts and converged
@@ -216,7 +216,7 @@ def write_markdown(rows, out: Path, quick: bool):
         "  container with no numba and no compiler — see",
         "  `docs/clean_container_check.log`.", "",
         "### How the sweep is laid out", "",
-        "§6.5 lists five axes: `TAU_R`, `TAU_N`, `DEG`, the angular",
+        "Five axes are swept: `TAU_R`, `TAU_N`, `DEG`, the angular",
         "resolution, and the scheme. The full cross product is 180 cells, and",
         "the CIS cells alone would run for weeks -- a single CIS run at",
         "`tau_R = 1e-2` is 16 836 iterations. The sweep therefore varies **one",
@@ -231,8 +231,8 @@ def write_markdown(rows, out: Path, quick: bool):
         "point of whichever scheme produced the state.", "",
         "It separates the two schemes: CIS drives it to round-off, **GSIS does",
         "not** (3.2e-03 against 4.3e-14 at `tau_R = 1e-1`). That is the",
-        "evidence behind `docs/LIMITATIONS.md` #1 and the reason Proposal",
-        "1's §10 claim that the schemes share a fixed point to `rtol=1e-8`",
+        "evidence behind `docs/LIMITATIONS.md` #1 and the reason any claim",
+        "that the two schemes share a fixed point to `rtol=1e-8`",
         "does not hold; `docs/fixed_point_study.json` has the scaling.", "",
         "It does **not** expose how far a truncated CIS run is from its own",
         "answer. For CIS it measures the same moment change the iterate",
@@ -245,7 +245,7 @@ def write_markdown(rows, out: Path, quick: bool):
         "thick. Measured at `tau_R = 1e-2`, stopping at `tol = 1e-4`:", "",
         "| iterations | iterate residual | true residual | actual error |",
         "|---|---|---|---|",
-        "| 2 599 | 9.99e-05 | 9.51e-05 | **1.46e-01 — 1465x larger** |", "",
+        "| 2 599 | 9.99e-05 | 9.51e-05 | **1.28e-01 relative in `int T dA` vs the same scheme at `tol = 1e-12` — three orders of magnitude larger** |", "",
         "against a reference converged to `1e-12` in 31 245 iterations. The",
         "two truncated CIS rows below are the same effect at full strength: a",
         "residual of `2.5e-6` after 200 000 iterations, and a mass of 0.0282",
@@ -282,7 +282,7 @@ def write_markdown(rows, out: Path, quick: bool):
     bench = Path(__file__).resolve().parent.parent / "docs" / "benchmark.json"
     if bench.exists():
         b = json.loads(bench.read_text())
-        L += ["## Performance (§5)", "",
+        L += ["## Performance", "",
               f"Shipped mesh: `N_TRIS = {b['n_tris']}`, {b['ndir']} directions, "
               f"`DEG = 3`, single process. Sweep mode `{b['sweep_mode']}` "
               f"({b['operator_mb']:.0f} MB of factorised element operators); GSIS "
@@ -302,7 +302,7 @@ def write_markdown(rows, out: Path, quick: bool):
             v = b[key]
             L.append(f"| {label} | < {target:g} {unit} | **{v:.2f} {unit}** | "
                      f"{target / v:.0f}x |")
-        L += ["", "All seven met. The two that matter for Proposal 2's task budget",
+        L += ["", "All seven met. The two that matter for a task budget",
               "are the per-iteration costs, since an agent will run the solver many",
               "times inside a 10-15 minute verification window.", ""]
 
@@ -312,10 +312,29 @@ def write_markdown(rows, out: Path, quick: bool):
         "this mesh is effectively non-convergent within any practical budget --",
         "that is the stiffness the benchmark exists to measure. The iteration",
         "count at truncation is recorded so the growth rate can be read off.", "",
-        "## Deviations (§7)", "",
+        '## Reproduction of the published 2-D table',
+        '',
+        "`tools/reproduce_published_table.py`, at the publication's own discretisation",
+        '(200 triangles, P3, its angular resolutions, its stopping rule):',
+        '',
+        '| `(Kn_R, Kn_N)` | CIS: here / published | GSIS: here / published | GSIS field gap vs CIS |',
+        '|---|---|---|---|',
+        '| (0.001, 1e5) | — / > 1e6 | **43 / 43** | — |',
+        '| (0.01, 1e5) | **13 234 / 13 234** | **24 / 24** | 3.7e-3 |',
+        '| (0.1, 1e5) | **269 / 269** | **26 / 26** | 1.7e-2 |',
+        '| (1, 1) | **29 / 29** | **28 / 28** | 1.5e-2 |',
+        '| (10, 0.01) | **1 883 / 1 883** | 70 / 47 | 2.3e-2 |',
+        '',
+        'Every unaccelerated count and four of five accelerated counts match the',
+        'publication exactly. The fifth is the point at which the publication switches',
+        'to a different macroscopic boundary treatment (temperature and heat flux',
+        'both imposed from the kinetic solution); this implementation imposes the',
+        'trace temperature only. The last column is the fixed-point displacement of',
+        '`docs/LIMITATIONS.md` #1 on the published test points: present at every one.', "",
+        "## Deviations", "",
         "All seven are implemented and individually tested in",
         "`tests/integration/test_deviations.py`:", "",
-        "| § | Deviation | Test |",
+        "| # | Deviation | Test |",
         "|---|---|---|",
         "| 7.1 | BC dispatch: thermalising / non-thermalising / periodic | "
         "`test_thermalising_is_unchanged_by_the_dispatch`, "

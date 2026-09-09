@@ -222,7 +222,7 @@ becomes optically thick `rho -> 1` and that factor blows up. Measured at
 
 | reported residual | actual error against the converged answer |
 |---|---|
-| 9.99e-05 | 1.46e-01 — **1465x larger** |
+| 9.99e-05 | 1.28e-01 relative in `int T dA`, against the same scheme at `tol = 1e-12` — **three orders of magnitude larger** |
 
 That pseudo-convergence trap is preserved deliberately as the default
 stopping rule, because it is one of the things the benchmark is meant to
@@ -234,4 +234,4 @@ probe. Two additional numbers are reported alongside it:
   transport system at the current state. For CIS this measures the same
   moment change the iterate residual does, so it does *not* expose the trap;
   what it does expose is that GSIS converges to a state which does not
-  satisfy the transport system at all (§6, and `LIMITATIONS.md` #1).
+  satisfy the transport system at all.

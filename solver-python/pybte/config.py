@@ -1,13 +1,18 @@
 """Case configuration -- the YAML replacement for ``control.in``.
 
-The mapping is one-to-one with the Fortran namelists (§3.1 of the proposal),
+The mapping is one-to-one with the Fortran namelists,
 plus the fields that were implicit in the Fortran and are made explicit here:
 
 * ``scheme.acc_variant``   -- A (``Synthetic_Acceleration.f90``, the default)
-                              or B (``Synthetic_Acceleration1.f90``)  [§7.2]
-* ``scheme.stabilisation`` -- the HDG ``ST(1:3)``                     [§7.5]
-* ``restart``              -- explicit, off by default                [§7.3]
-* ``iteration.true_residual`` -- report a true transport residual too [§7.6]
+                              or B (``Synthetic_Acceleration1.f90``)
+* ``scheme.stabilisation`` -- the HDG ``ST(1:3)``
+* ``restart``              -- explicit, off by default
+* ``iteration.true_residual`` -- report a true transport residual too
+* ``scheme.method``        -- ``source`` (default) or ``krylov``: GMRES on
+                              the outer iteration, same fixed point as CIS;
+                              see docs/KRYLOV.md
+* ``scheme.defect_*``      -- experimental fixed-point repair, off by
+                              default; see docs/DEFECT_CORRECTION.md
 * ``performance``          -- storage/kernel choices, no physics
 """
 from __future__ import annotations
@@ -32,7 +37,7 @@ class Iteration:
     tol: float = 1.0e-8
     tmax: int = 10_000
     #: Also compute the transport residual of the discrete system each
-    #: iteration (§7.6).  Never changes the stopping criterion, which stays
+    #: iteration.  Never changes the stopping criterion, which stays
     #: ``residual_iterate < tol``.  For CIS this tracks the iterate residual;
     #: what exposes the error is ``RunRecord.error_estimate``.
     true_residual: bool = False
@@ -52,18 +57,60 @@ class Iteration:
 @dataclass
 class Scheme:
     accflag: int = 0                     # 0 = CIS, 1 = GSIS
-    acc_variant: str = "A"               # §7.2
-    stabilisation: list = field(default_factory=lambda: [1.0, 1.0, 1.0])  # §7.5
-    #: §7.5: divide ST(2:3) by the global minimum element height
+    acc_variant: str = "A"
+    stabilisation: list = field(default_factory=lambda: [1.0, 1.0, 1.0])
+    #: divide ST(2:3) by the global minimum element height
     scale_by_hmin: bool = False
-    #: §7.7: 'raise' or 'break' when a direction's sweep graph has a cycle
+    #: 'raise' or 'break' when a direction's sweep graph has a cycle
     on_cycle: str = "raise"
+    #: Experimental: relaxation on the lagged consistency defect that removes
+    #: the GSIS/CIS fixed-point displacement.  ``0.0`` (default) is the
+    #: shipped damped blend; see docs/DEFECT_CORRECTION.md.
+    defect_omega: float = 0.0
+    #: Update the defect only every N iterations.  Between updates it is
+    #: frozen, which leaves the GSIS iteration matrix -- and therefore the
+    #: convergence rate -- exactly as published; only the fixed point moves.
+    defect_every: int = 1
+    #: Anderson-acceleration window on the outer defect sequence.  0 = plain
+    #: relaxation.  The outer map ``d -> o(d)`` is affine, so Anderson applies
+    #: exactly; it contracts at ~0.95 unaccelerated, which is what makes the
+    #: unaccelerated outer loop useless.
+    defect_anderson: int = 0
+    #: How the outer iteration is driven.  ``source``: Richardson / source
+    #: iteration, the historical behaviour (with ``accflag = 1``, GSIS).
+    #: ``krylov``: GMRES on ``(I - T) u = g``, one sweep per product -- same
+    #: fixed point as source iteration; raises where a sweep is not an exact
+    #: evaluation of the map (broken cycles, periodic faces).  See krylov.py.
+    method: str = "source"
+    krylov_tol_factor: float = 1.0e-6
+    krylov_max_bytes: float = 5.0e8
+    krylov_max_rounds: int = 3
+    krylov_precond: bool = False
 
     def __post_init__(self):
+        self.method = str(self.method).lower()
+        if self.method not in ("source", "krylov"):
+            raise ValueError("scheme.method must be 'source' or 'krylov'")
+        self.krylov_tol_factor = float(self.krylov_tol_factor)
+        self.krylov_max_bytes = float(self.krylov_max_bytes)
+        self.krylov_max_rounds = int(self.krylov_max_rounds)
+        self.krylov_precond = bool(self.krylov_precond)
+        if self.krylov_max_bytes <= 0 or self.krylov_max_rounds < 1:
+            raise ValueError("scheme.krylov_max_bytes must be > 0 and "
+                             "krylov_max_rounds >= 1")
         self.accflag = int(self.accflag)
         self.acc_variant = str(self.acc_variant).upper()
         self.stabilisation = [float(v) for v in self.stabilisation]
         self.scale_by_hmin = bool(self.scale_by_hmin)
+        self.defect_omega = float(self.defect_omega)
+        self.defect_every = int(self.defect_every)
+        if self.defect_every < 0:
+            raise ValueError("scheme.defect_every must be >= 0")
+        self.defect_anderson = int(self.defect_anderson)
+        if self.defect_anderson < 0:
+            raise ValueError("scheme.defect_anderson must be >= 0")
+        if not 0.0 <= self.defect_omega <= 1.0:
+            raise ValueError("scheme.defect_omega must be in [0, 1]")
         if self.on_cycle not in ("raise", "break"):
             raise ValueError("scheme.on_cycle must be 'raise' or 'break'")
 

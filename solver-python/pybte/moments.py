@@ -12,7 +12,7 @@ mesh they give the domain integral of the field (0.25 for the shipped cavity,
 which is the mean of the Laplace solution over the unit square).
 
 ``Calculate_Residual_T`` is the Fortran's stopping criterion and is kept
-verbatim as ``residual_iterate``; see §7.6 for the true residual that is
+verbatim as ``residual_iterate``; ``true_residual`` is the alternative that is
 reported alongside it.
 """
 from __future__ import annotations

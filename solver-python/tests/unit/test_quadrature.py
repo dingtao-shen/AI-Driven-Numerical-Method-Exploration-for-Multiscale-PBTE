@@ -1,4 +1,4 @@
-"""§6.1 unit level: quadrature rules and the angular mesh."""
+"""Quadrature rules and the angular mesh."""
 from __future__ import annotations
 
 import numpy as np

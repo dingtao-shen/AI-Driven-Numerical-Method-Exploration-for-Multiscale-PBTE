@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Measure the §5 performance targets.
+"""Measure the performance targets.
 
     python tools/benchmark.py [--json bench.json]
 
 Reports setup cost, per-iteration cost and peak RSS for the shipped case, and
-checks each against the target in Proposal 1 §5.  Run it on an otherwise idle
+checks each against its target.  Run it on an otherwise idle
 machine: the numbers are wall-clock.
 """
 from __future__ import annotations
@@ -24,7 +24,7 @@ from pybte import Case, Solver                                    # noqa: E402
 
 CASE = ROOT / "cases" / "cavity_tauR1e-3_cis.yaml"
 
-#: (label, target, unit, comparison) straight from Proposal 1 §5
+#: (label, target, unit, comparison)
 TARGETS = [
     ("setup", 30.0, "s"),
     ("gsis_setup", 30.0, "s"),

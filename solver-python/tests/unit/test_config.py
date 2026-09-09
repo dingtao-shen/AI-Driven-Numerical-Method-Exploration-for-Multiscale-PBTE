@@ -1,4 +1,4 @@
-"""Config parsing, the control.in converter, and the §7.3 restart contract."""
+"""Config parsing, the control.in converter, and the restart contract."""
 from __future__ import annotations
 
 import numpy as np
@@ -128,7 +128,7 @@ def test_unknown_boundary_type():
 
 
 # ---------------------------------------------------------------------------
-# §7.3 restart contract
+# restart contract
 # ---------------------------------------------------------------------------
 def _tiny_case(tmp_path, **kw):
     c = Case.from_yaml(CASES / "cavity_tauR1e-3_cis.yaml")

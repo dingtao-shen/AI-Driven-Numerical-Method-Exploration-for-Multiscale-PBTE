@@ -1,4 +1,4 @@
-"""§8: the interface Proposal 2 will build on.
+"""The public interface downstream tooling builds on.
 
 These are contract tests, not behaviour tests.  They exist so that a rename or
 a type change in `RunRecord` fails here rather than silently in a downstream
@@ -19,13 +19,13 @@ from ..conftest import CASES
 
 
 def test_top_level_names():
-    """The three names §8 imports must be importable from the package root."""
+    """The three public names must be importable from the package root."""
     for name in ("Case", "Solver", "RunRecord"):
         assert hasattr(pybte, name)
     assert pybte.__version__
 
 
-#: (attribute, expected type) exactly as §8 spells them
+#: (attribute, expected type) of the frozen run-record interface
 CONTRACT = [
     ("iterations", int),
     ("converged", bool),
@@ -86,13 +86,13 @@ def test_run_record_is_self_describing(record, tmp_path):
 
 
 def test_sweep_count_is_hardware_independent(record):
-    """§8 calls sweep_count the hardware-independent work metric; it must
+    """sweep_count is the hardware-independent work metric; it must
     count sweeps, not seconds."""
     assert record.sweep_count == record.iterations
 
 
 def test_solver_signature_is_stable():
-    """`Solver(case)` with no other required argument, per §8."""
+    """`Solver(case)` must work with no other required argument."""
     sig = inspect.signature(Solver.__init__)
     required = [n for n, p in sig.parameters.items()
                 if n != "self" and p.default is inspect.Parameter.empty]
