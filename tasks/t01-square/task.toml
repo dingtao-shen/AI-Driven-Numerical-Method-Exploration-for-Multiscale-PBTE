@@ -1,0 +1,47 @@
+name = "t01-square"
+family = "square-domain-acceleration"
+flagship = true
+version = "0.2.0"
+
+summary = """
+A correct but unaccelerated kinetic transport solver on a square degrades by
+orders of magnitude as the medium becomes optically thick or hydrodynamic,
+and stops converging at the stiff end. Deliver an accelerated solver that
+converges to the same discrete fixed point on ten cases -- two wall types,
+five (tau_R, tau_N) pairs spanning every regime of the dual-relaxation
+model -- and is scored on its speed-up over source iteration.
+"""
+
+tags = ["kinetic-transport", "stiff", "iterative-solvers", "asymptotic-limit",
+        "boundary-conditions", "numerical-analysis", "scientific-computing"]
+
+difficulty = "hard"
+families = ["F1", "F2"]
+knudsen_grid = "the five (Kn_R, Kn_N) pairs of the reference publication's 2-D test"
+
+[budgets]
+verification_seconds = 900
+agent_seconds = 7200
+
+[grading]
+structure = "gates then score"
+gates = ["converged", "transport_residual", "field"]
+score = "geometric-mean speed-up in sweep-equivalents (end-to-end wall-clock / one fine sweep, both timed by the verifier in-session) over the unaccelerated solver, on cells where it is slow"
+score_unit = "sweep-equivalents"
+reported_alongside = ["self_reported_sweeps", "peak_rss_mb"]
+
+[provenance]
+solver = "solver-python"
+environment_generated_by = "tools/make_env.py"
+cells_calibrated_by = "tools/calibrate_cells.py"
+reference_generated_by = "tools/make_reference.py"
+oracle_generated_by = "tools/make_oracle.py"
+validated_by = "tools/validate_task.py"
+
+[contamination]
+canary = "BENCHMARK-CANARY-a7f3c21e-DO-NOT-REPRODUCE-THIS-STRING"
+# Grading is on properties of the delivered solver, never on the method.
+# The environment is scrubbed of every term naming an acceleration method
+# (moment-based or Krylov); make_env.py enforces the scrub as an assertion.
+public_analogue = "Krylov-accelerated source iteration; moment-based synthetic acceleration"
+public_analogue_risk = "high"

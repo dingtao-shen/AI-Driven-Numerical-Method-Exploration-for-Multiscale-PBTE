@@ -1,0 +1,252 @@
+{
+  "gate": true,
+  "score": 2270.9656412648064,
+  "families": {
+    "F1": {
+      "description": "Isothermal square: T = 1 on the north wall, 0 on the other three.",
+      "gate": true,
+      "score": 2108.2650681530536,
+      "score_censored": true,
+      "cells": [
+        {
+          "cell": "F1_1e-3",
+          "gates": {
+            "converged": true,
+            "transport_residual": true,
+            "field": true
+          },
+          "iterations": 9,
+          "converged": true,
+          "mass": 0.24999704107891277,
+          "wall": 7.98416911897948,
+          "max_rss_mb": 330.12890625,
+          "transport_residual": 1.0449261287790813e-15,
+          "field_gap": 2.6143671155307482e-11,
+          "field_gap_from_vdf": 2.6143671155307482e-11,
+          "reference_transport_residual": 2.2330561315644882e-15,
+          "field_gap_worst": 2.6143671155307482e-11,
+          "field_gap_max": 1e-05,
+          "passed": true,
+          "scored": true,
+          "speedup": 22222.222222222223,
+          "speedup_censored": true,
+          "wall_per_iteration_vs_cis": 726.2594893788302
+        },
+        {
+          "cell": "F1_1e-2",
+          "gates": {
+            "converged": true,
+            "transport_residual": true,
+            "field": true
+          },
+          "iterations": 9,
+          "converged": true,
+          "mass": 0.2499698029054896,
+          "wall": 0.48000796302221715,
+          "max_rss_mb": 256.34375,
+          "transport_residual": 1.4091171833600896e-13,
+          "field_gap": 2.285999533615022e-12,
+          "field_gap_from_vdf": 2.285999533615022e-12,
+          "reference_transport_residual": 2.7669659819433356e-15,
+          "field_gap_worst": 2.285999533615022e-12,
+          "field_gap_max": 1e-05,
+          "passed": true,
+          "scored": true,
+          "speedup": 1870.0,
+          "speedup_censored": false,
+          "wall_per_iteration_vs_cis": 25.966642001225075
+        },
+        {
+          "cell": "F1_1e-1",
+          "gates": {
+            "converged": true,
+            "transport_residual": true,
+            "field": true
+          },
+          "iterations": 10,
+          "converged": true,
+          "mass": 0.24968503886442175,
+          "wall": 0.49176422401797026,
+          "max_rss_mb": 256.21875,
+          "transport_residual": 5.35468399254869e-13,
+          "field_gap": 3.362771304017821e-12,
+          "field_gap_from_vdf": 3.362771304017821e-12,
+          "reference_transport_residual": 8.242115325014725e-16,
+          "field_gap_worst": 3.362771304017821e-12,
+          "field_gap_max": 1e-05,
+          "passed": true,
+          "scored": false
+        },
+        {
+          "cell": "F1_1_1",
+          "gates": {
+            "converged": true,
+            "transport_residual": true,
+            "field": true
+          },
+          "iterations": 11,
+          "converged": true,
+          "mass": 0.24895885943679996,
+          "wall": 0.49950058199465275,
+          "max_rss_mb": 255.33203125,
+          "transport_residual": 3.582443911088858e-14,
+          "field_gap": 1.0805577869529934e-13,
+          "field_gap_from_vdf": 1.0805577869529934e-13,
+          "reference_transport_residual": 3.014700424443046e-16,
+          "field_gap_worst": 1.0805577869529934e-13,
+          "field_gap_max": 1e-05,
+          "passed": true,
+          "scored": false
+        },
+        {
+          "cell": "F1_10_1e-2",
+          "gates": {
+            "converged": true,
+            "transport_residual": true,
+            "field": true
+          },
+          "iterations": 12,
+          "converged": true,
+          "mass": 0.24941406227128826,
+          "wall": 0.49674395500915125,
+          "max_rss_mb": 255.43359375,
+          "transport_residual": 7.054645336759657e-14,
+          "field_gap": 2.5651681959536327e-13,
+          "field_gap_from_vdf": 2.5651681959536327e-13,
+          "reference_transport_residual": 4.482851387926486e-15,
+          "field_gap_worst": 2.5651681959536327e-13,
+          "field_gap_max": 1e-05,
+          "passed": true,
+          "scored": true,
+          "speedup": 225.5,
+          "speedup_censored": false,
+          "wall_per_iteration_vs_cis": 23.740517921850245
+        }
+      ],
+      "max_rss_mb": 330.12890625
+    },
+    "F2": {
+      "description": "Square with diffusely reflecting (adiabatic) east and west walls; T = 1 north, 0 south.",
+      "gate": true,
+      "score": 2446.222261948926,
+      "score_censored": true,
+      "cells": [
+        {
+          "cell": "F2_1e-3",
+          "gates": {
+            "converged": true,
+            "transport_residual": true,
+            "field": true
+          },
+          "iterations": 9,
+          "converged": true,
+          "mass": 0.49999998773307447,
+          "wall": 1.4864876620122232,
+          "max_rss_mb": 276.2578125,
+          "transport_residual": 7.896801145868327e-15,
+          "field_gap": 3.377520711999874e-11,
+          "field_gap_from_vdf": 3.377520711999874e-11,
+          "reference_transport_residual": 1.3999959267054895e-15,
+          "field_gap_worst": 3.377520711999874e-11,
+          "field_gap_max": 1e-05,
+          "passed": true,
+          "scored": true,
+          "speedup": 22222.222222222223,
+          "speedup_censored": true,
+          "wall_per_iteration_vs_cis": 85.60805623696764
+        },
+        {
+          "cell": "F2_1e-2",
+          "gates": {
+            "converged": true,
+            "transport_residual": true,
+            "field": true
+          },
+          "iterations": 10,
+          "converged": true,
+          "mass": 0.49999999982249477,
+          "wall": 0.5005772139993496,
+          "max_rss_mb": 258.265625,
+          "transport_residual": 2.2928656738108632e-14,
+          "field_gap": 8.888538648134199e-13,
+          "field_gap_from_vdf": 8.888538648134199e-13,
+          "reference_transport_residual": 1.698908428083816e-15,
+          "field_gap_worst": 8.888538648134199e-13,
+          "field_gap_max": 1e-05,
+          "passed": true,
+          "scored": true,
+          "speedup": 3234.3,
+          "speedup_censored": false,
+          "wall_per_iteration_vs_cis": 38.676685942843086
+        },
+        {
+          "cell": "F2_1e-1",
+          "gates": {
+            "converged": true,
+            "transport_residual": true,
+            "field": true
+          },
+          "iterations": 11,
+          "converged": true,
+          "mass": 0.49999999998987044,
+          "wall": 0.5030410779872909,
+          "max_rss_mb": 258.03125,
+          "transport_residual": 2.349336577730117e-13,
+          "field_gap": 1.3669733542327166e-12,
+          "field_gap_from_vdf": 1.3669733542327166e-12,
+          "reference_transport_residual": 1.5030034646710124e-15,
+          "field_gap_worst": 1.3669733542327166e-12,
+          "field_gap_max": 1e-05,
+          "passed": true,
+          "scored": false
+        },
+        {
+          "cell": "F2_1_1",
+          "gates": {
+            "converged": true,
+            "transport_residual": true,
+            "field": true
+          },
+          "iterations": 13,
+          "converged": true,
+          "mass": 0.49999999999591294,
+          "wall": 0.5211073539685458,
+          "max_rss_mb": 257.81640625,
+          "transport_residual": 2.2381543253161085e-13,
+          "field_gap": 5.914194856813527e-13,
+          "field_gap_from_vdf": 5.914194856813527e-13,
+          "reference_transport_residual": 7.058319614051009e-16,
+          "field_gap_worst": 5.914194856813527e-13,
+          "field_gap_max": 1e-05,
+          "passed": true,
+          "scored": false
+        },
+        {
+          "cell": "F2_10_1e-2",
+          "gates": {
+            "converged": true,
+            "transport_residual": true,
+            "field": true
+          },
+          "iterations": 12,
+          "converged": true,
+          "mass": 0.49999999999192923,
+          "wall": 0.4971502390108071,
+          "max_rss_mb": 257.89453125,
+          "transport_residual": 5.728882336097205e-14,
+          "field_gap": 2.40178279063911e-13,
+          "field_gap_from_vdf": 2.40178279063911e-13,
+          "reference_transport_residual": 4.2026116850493065e-15,
+          "field_gap_worst": 2.40178279063911e-13,
+          "field_gap_max": 1e-05,
+          "passed": true,
+          "scored": true,
+          "speedup": 203.66666666666666,
+          "speedup_censored": false,
+          "wall_per_iteration_vs_cis": 31.63368377304366
+        }
+      ],
+      "max_rss_mb": 276.2578125
+    }
+  }
+}

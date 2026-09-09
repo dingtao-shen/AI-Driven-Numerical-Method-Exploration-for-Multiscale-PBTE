@@ -1,0 +1,86 @@
+{
+  "F1_10_1e-2": {
+    "iterations": 578,
+    "transport_residual": 4.482851387926486e-15,
+    "mass": 0.24941406227130938,
+    "config_hash": "657a375a2c81bf839c2d567043bd84a31eda2be70bc769e70bf1154cfad30800",
+    "cis_iterations": 4362,
+    "cis_gap": 3.467187816028512e-08,
+    "cis_transport_residual": 2.0605505361590015e-09
+  },
+  "F1_1_1": {
+    "iterations": 21,
+    "transport_residual": 3.014700424443046e-16,
+    "mass": 0.24895885943679633,
+    "config_hash": "c5be6c52ba7ac01ef61ec80e2bc1fc527173ac0c64e761ebc13f8df0afb1790f",
+    "cis_iterations": 42,
+    "cis_gap": 7.380000448672942e-11,
+    "cis_transport_residual": 4.880527188177512e-12
+  },
+  "F1_1e-1": {
+    "iterations": 37,
+    "transport_residual": 8.242115325014725e-16,
+    "mass": 0.24968503886451243,
+    "config_hash": "b6e9b48361237a416329169eece8c78ef2150886140e80766a81a8a52bfda50b",
+    "cis_iterations": 413,
+    "cis_gap": 1.8946242816588068e-09,
+    "cis_transport_residual": 3.692054666622615e-11
+  },
+  "F1_1e-2": {
+    "iterations": 228,
+    "transport_residual": 2.7669659819433356e-15,
+    "mass": 0.24996980290561652,
+    "config_hash": "57802153c8299d7ae879a69f056cde1f8e039dc4b636cc90f72d52be6f125777",
+    "cis_iterations": 24031,
+    "cis_gap": 1.561493443726012e-07,
+    "cis_transport_residual": 9.072884717956263e-11
+  },
+  "F1_1e-3": {
+    "iterations": 992,
+    "transport_residual": 2.2330561315644882e-15,
+    "mass": 0.24999704107775117,
+    "config_hash": "2fcddb8029e6df5d714cfd4d7aebe53d082ca83bb320edca0516e2873f99346e",
+    "cis_iterations": null
+  },
+  "F2_10_1e-2": {
+    "iterations": 728,
+    "transport_residual": 4.2026116850493065e-15,
+    "mass": 0.49999999999181455,
+    "config_hash": "93a4b2530488794f91692ecea965cc66f68ca5d0fbc0b1a95628ab48d66ebfd0",
+    "cis_iterations": 4053,
+    "cis_gap": 3.494799252920439e-08,
+    "cis_transport_residual": 3.2504996634091596e-09
+  },
+  "F2_1_1": {
+    "iterations": 23,
+    "transport_residual": 7.058319614051009e-16,
+    "mass": 0.4999999999959828,
+    "config_hash": "c153e8a7794d3158eba0f789c8b0bbf9c1211d697939f43978da8792984c11e3",
+    "cis_iterations": 95,
+    "cis_gap": 3.755463084450684e-10,
+    "cis_transport_residual": 1.0048694169916623e-11
+  },
+  "F2_1e-1": {
+    "iterations": 47,
+    "transport_residual": 1.5030034646710124e-15,
+    "mass": 0.4999999999898862,
+    "config_hash": "8ee566c2ac77aaa07c24a8b29d7aaaff70ba77a14591e0b88ce8bb9ed42b4d3c",
+    "cis_iterations": 847,
+    "cis_gap": 4.364592788553237e-09,
+    "cis_transport_residual": 4.047227955750346e-11
+  },
+  "F2_1e-2": {
+    "iterations": 281,
+    "transport_residual": 1.698908428083816e-15,
+    "mass": 0.49999999982271304,
+    "config_hash": "0cfe0b9164f7a049c3b44504ceb8e6475a19f4a8fa3c0c1e35d6b26921e253df",
+    "cis_iterations": null
+  },
+  "F2_1e-3": {
+    "iterations": 1104,
+    "transport_residual": 1.3999959267054895e-15,
+    "mass": 0.49999998774034926,
+    "config_hash": "814251191e3d4b3e601f8288bd009b5b76e2fd9614b46033b26b1d263b756066",
+    "cis_iterations": null
+  }
+}

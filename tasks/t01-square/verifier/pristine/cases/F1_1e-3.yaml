@@ -1,0 +1,13 @@
+# Isothermal square: T = 1 on the north wall, 0 on the other three.  Kn_R = 0.001, Kn_N = 100000.
+iteration:  {tol: 1.0e-8, tmax: 30000, true_residual: false}
+velmesh:    {npole: 10, nazim: 20}
+dg:         {deg: 2}
+flow:       {cv: 1.0, vg: 1.0, tau_r: 0.001, tau_n: 100000}
+mesh:       {file: ../meshes/A1_Nx11_Ny11.msh}
+boundaries:
+  - {name: SWall, phyid: 11, type: thermalising, temp: 0.0}
+  - {name: NWall, phyid: 12, type: thermalising, temp: 1.0}
+  - {name: EWall, phyid: 13, type: thermalising, temp: 0.0}
+  - {name: WWall, phyid: 14, type: thermalising, temp: 0.0}
+restart:    {enabled: false, path: null}
+output:     {dir: ../out/F1_1e-3, field: false, runtime_log: false, run_record: true}

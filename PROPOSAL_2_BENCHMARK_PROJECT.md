@@ -1,8 +1,9 @@
 # Proposal 2 — A benchmark for AI agents on stiff kinetic transport solvers
 
 **Working title:** `StiffKinetic-Bench` (v0 instantiation: gray linear Callaway phonon BTE)
-**Status:** plan of record
-**Depends on:** Proposal 1 (`solver-python/` complete through Gate 6)
+**Status:** plan of record — v0.2 (2026-09-08): grading is gates + score; the
+"requires domain knowledge" claim of v0.1 was tested and withdrawn (§1.2, §6)
+**Depends on:** `solver-python/` — complete, validated, 156 tests green
 **Audience:** Claude Code, executing against this repository
 
 ---
@@ -61,11 +62,15 @@ This gives us a grading signal that no existing agent benchmark uses:
 - **Continuously parameterised by a physical stiffness knob.** Sweeping the Knudsen number
   over four decades gives graded difficulty and partial credit for free, rather than a
   single pass/fail.
-- **Very hard to fake.** An agent cannot achieve bounded iteration counts across four
-  decades of stiffness without actually implementing a correct acceleration scheme. And we
-  can add a fixed-point-preservation check — the accelerated solution must equal the
-  unaccelerated converged solution — which rules out the dominant cheat of loosening the
-  tolerance or perturbing the physics.
+- **Hard to fake — not hard to solve.** A fixed-point-preservation check (the accelerated
+  solution must equal the unaccelerated converged solution, certified by a transport
+  residual computed outside the submission) rules out the dominant cheats: loosening the
+  tolerance, damping the physics, declaring convergence on another quantity. It does *not*
+  make the task require domain knowledge. Full GMRES on the source-iteration operator, one
+  sweep per product, passes every shipped cell, and a frontier agent found it unaided in
+  44 minutes (§6). The benchmark's signal is therefore the **score spread** across agents,
+  models and scaffolds and the gate pass rate of weaker ones — not whether the strongest
+  model passes. v0.1 claimed otherwise; the claim was measured and withdrawn.
 - **Backed by theory.** Contraction-factor bounds and asymptotic-preservation are
   properties with known targets, not vibes.
 
@@ -77,13 +82,30 @@ This gives us a grading signal that no existing agent benchmark uses:
 
 ### 1.4 Why this project, from this code
 
-We hold an unusual asset: a research solver in which conventional source iteration (CIS)
-and a general synthetic iterative scheme (GSIS) are the same codebase behind a single flag,
-converging to the same discrete fixed point. That is precisely the `solver/` and `oracle/`
-pair a benchmark task needs, and it exists because it was built for real research, not for
-a benchmark. The parameter that controls difficulty (`TAU_R`) is already a config field.
-The metric (iteration count) is already logged. The diffusion-limit reference (an analytic
-Fourier series for the shipped cavity) is already implemented.
+We hold a research solver in which source iteration (CIS) and a published synthetic
+acceleration (GSIS) are one codebase behind a flag, validated bit-for-bit against its
+Fortran original and against the publication's own 2-D table (unaccelerated counts 5/5
+identical, accelerated 4/5). The stiffness knobs (`tau_R`, `tau_N`) are config fields; the
+metric (outer iterations = sweeps) is logged; the diffusion-limit series is implemented.
+
+Two facts, both measured, shape what the benchmark can honestly claim:
+
+**The published accelerated scheme does not converge to source iteration's fixed point.**
+Its last step blends the synthetic solution with the kinetic moment under a damping factor,
+and at a fixed point that blend leaves a stationary offset. On the publication's own five
+test points, at its own discretisation, the displacement is `3.7e-3 .. 2.3e-2`; it is
+present at every Knudsen number and every boundary type tested and does not vanish under
+refinement (`solver-python/docs/LIMITATIONS.md` #1). A grader that requires agreement with
+the unaccelerated fixed point therefore rejects the published scheme. That is a result,
+and the grader is what produces it.
+
+**A standard Krylov method does converge to it.** GMRES on `(I - T) u = g`, each sweep one
+matrix–vector product, reaches source iteration's fixed point to round-off (transport
+residual `1e-15`, agreement with CIS to `4e-11 .. 1.6e-7` wherever CIS can reach the
+answer) in 228 sweeps where CIS needs 16 830 and in 992 where CIS does not converge in
+200 000. It is the oracle (`scheme.method: krylov`, `solver-python/docs/KRYLOV.md`). It
+is not Knudsen-independent, its cost is memory, and it does not apply to periodic faces
+— which is where the next family (§7, F3) comes from.
 
 ### 1.5 Scope honesty
 
@@ -99,57 +121,79 @@ must be in place from the start or it will never be retrofitted.
 ## 2. The idea, concretely
 
 A task is a container plus an automatic grader. Inside the container is a working but
-deliberately incomplete solver. The agent gets a terminal and a task description. When it
-stops, a script decides pass or fail.
+deliberately unaccelerated solver. The agent gets a terminal and a task description. When
+it stops, a script decides whether every gate passed and, if so, how well.
 
-The v0 flagship task, in full:
+The v0 task, `tasks/t01-square`, in full:
 
-- **`environment/`** — the Python solver with the entire `acceleration/` subpackage removed
-  and the GSIS branch stripped from the driver. What remains is a correct, competent,
-  unaccelerated CIS solver, plus five case files sweeping `TAU_R ∈ {1e0, 1e-1, 1e-2, 1e-3,
-  1e-4}`, plus stored reference solutions for all five.
-- **`task.md`** — "The solver converges for the first two cases and stalls on the rest.
-  Modify it so all five converge to `tol=1e-8` in under 200 outer iterations each, without
-  changing the converged solution."
-- **`verifier/`** — runs all five cases and checks four things:
-  1. all five report converged
-  2. iteration count at `TAU_R=1e-4` is below 200
-  3. converged temperature field matches the stored reference to `rtol=1e-6`
-  4. the fixed point is unchanged — the solution equals the one the *unmodified* solver
-     reaches on the two cases where it does converge, to `rtol=1e-8`
-- **`oracle/`** — the GSIS implementation, restored. Must score 1.0, five times out of five.
-- **null baseline** — the unmodified environment must score 0.0, five times out of five.
+- **`environment/`** — the Python solver with every acceleration path removed (the
+  moment-based subpackage, the Krylov driver, their config keys), scrubbed of every term
+  naming either, canaried. Plus ten case files: two boundary families on the same square
+  and the same shrunk discretisation (200 elements, `DEG = 2`, `10 x 20` angles,
+  `tol = 1e-8`), each at the publication's five `(Kn_R, Kn_N)` pairs.
+- **`task.md`** — "Make every case converge — to the same answer the solver already
+  converges to where it can — and make it fast." States the gates and the score rule.
+- **`verifier/`** — owns its own copies of the cases, the mesh and a pristine solver.
+  **Gates**, every cell: (1) converged within cap; (2) transport residual
+  `||A f - b||/||b|| < 1e-7`, computed from the submitted distribution in the pristine tree;
+  (3) field within `1e-5` of the certified reference, both as reported and as recomputed
+  from the distribution. **Score**, only if every gate of every family passes: the
+  speed-up in outer iterations over the unaccelerated solver on the cells where it is
+  slow, geometric mean per family and then across families; censored where the
+  unaccelerated solver never converged within its 200 000 calibration cap. Peak memory and
+  wall-clock per iteration relative to the unaccelerated solver are reported alongside.
+- **`oracle/`** — the Krylov driver restored and made the default. Must pass every gate.
+- **null baseline** — the environment unmodified. Must fail.
 
-Check 4 is the load-bearing one. Without it an agent passes by raising the tolerance, by
-damping the physics, or by declaring convergence on a different quantity. With it, the only
-way through is to actually accelerate the iteration.
+| cell | regime | unaccelerated | oracle | speed-up |
+|---|---|---|---|---|
+| F1 (0.001, 1e5) | deep diffusive | > 200 000 | 992 | >= 201x |
+| F1 (0.01, 1e5) | diffusive | 16 830 | 228 | 74x |
+| F1 (0.1, 1e5) | transition | 317 | 37 | gate only |
+| F1 (1, 1) | ballistic | 33 | 21 | gate only |
+| F1 (10, 0.01) | hydrodynamic | 2 706 | 574 | 4.7x |
+| F2 (0.001, 1e5) | deep diffusive | > 200 000 | 1 104 | >= 181x |
+| F2 (0.01, 1e5) | diffusive | 32 343 | 281 | 115x |
+| F2 (0.1, 1e5) | transition | 643 | 47 | gate only |
+| F2 (1, 1) | ballistic | 75 | 23 | gate only |
+| F2 (10, 0.01) | hydrodynamic | 2 444 | 688 | 3.6x |
 
----
+F1: all walls isothermal, `T = 1` north. F2: east and west walls diffusely reflecting.
+The oracle scores 42x. Validation: oracle gate PASS 5/5 (~40 s each), null FAIL 5/5
+(~330 s), pathology preserved in both families, worst verification 346 s of a 900 s budget.
 
-## 3. Solver assessment — is the Fortran code sufficient?
+Gates 2 and 3 are the load-bearing pair. Gate 2 alone is not sufficient at small `Kn`
+— the operator is ill-conditioned there and a `4e-12` residual was measured next to a
+`1.5e-5` error — which is why gate 3 exists and why the references are cross-checked
+against source iteration wherever it converges.
 
-**Yes, and unusually cleanly.** Recorded here because it is the premise of everything below.
+**What the score is for.** A method that passes every gate can still be slow, memory-hungry
+or regime-dependent; the score, per family, is where that shows. The (10, 0.01) cells are
+the Krylov oracle's weakest at 4–5x, and a moment-preconditioned method would be expected
+to do better there; the score is what would reward it.
+
+## 3. Solver assessment
+
+**Sufficient, and unusually cleanly so.** Recorded here because it is the premise of
+everything below.
 
 ### 3.1 The CIS/GSIS separation is already at module boundaries
 
 The driver loop is:
 
-```fortran
-DO
-   CALL DG_Solver_VDF ()                              ! shared
-   IF (ACCFLAG.EQ.0) CALL Calculate_Macro_Properties ()
-   IF (ACCFLAG.EQ.1) THEN
-      CALL Calculate_SRC_ACC_HoTfromDVM ()
-      CALL Global_Problem_Solver_ACC ()
-      CALL Local_Problem_Solver_ACC ()
-      CALL Correct_VDF_Calculate_Macro_Properties ()
-   END IF
-   CALL Calculate_Residual_T (RESIDUL)                ! shared
-   IF (RESIDUL.LT.TOL) EXIT
-END DO
+```python
+while True:
+    self.sweep()                      # shared
+    if self.acc is None:
+        compute_moments(...)          # CIS
+    else:
+        self.acc.apply()              # GSIS: hot source, global solve, local solve, blend
+    res = residual_iterate(...)       # shared
+    if res < tol: break
 ```
 
-The acceleration lives entirely in one module, touched from exactly six call sites. Removing
+The whole acceleration is one subpackage, `pybte/acceleration/`, imported lazily and touched
+from a single call site. With `scheme.accflag: 0` it is never imported at all, so removing
 it yields a complete, correct CIS solver with no dangling references. This is the ideal
 starting shape for task construction and is rarer than it sounds.
 
@@ -157,46 +201,56 @@ starting shape for task construction and is rarer than it sounds.
 
 | Requirement | Present? | Where |
 |---|---|---|
-| Baseline that is correct but slow | Yes | `ACCFLAG=0` |
-| Oracle that fixes it | Yes | `ACCFLAG=1`, `Synthetic_Acceleration.f90` |
-| Both converge to same fixed point | By construction; verified at Proposal 1 Gate 4 | — |
-| Stiffness knob | Yes | `TAU_R` in `control.in`; `Kn = TAU_R` for `Vg=L=1` |
+| Baseline that is correct but slow | Yes | `scheme.accflag: 0` |
+| Oracle that fixes it | Yes | `scheme.accflag: 1` |
+| Oracle that preserves the CIS fixed point | Yes — full GMRES on the outer iteration; **not** the shipped GSIS (§1.4) | `scheme.method: krylov`, `pybte/krylov.py` |
+| Certificate of correctness | Transport residual (necessary) + certified reference (sufficient at small `Kn`) | verifier gates 2 and 3 |
+| Stiffness knob | Yes | `flow.tau_r`; `Kn = TAU_R` for `Vg=L=1` |
 | Second, independent stiffness knob | Yes | `TAU_N` — hydrodynamic limit |
-| Iteration count as primary metric | Yes, already logged | `RunTime.txt` |
-| Diffusion-limit analytic reference | Yes | 200-term Fourier series in `Out_Put_Result.f90` |
+| Iteration count as primary metric | Yes | `RunRecord.iterations`, `.sweep_count` |
+| Diffusion-limit analytic reference | Yes | `pybte.analytic` |
 | Mesh/order/angle refinement axes | Yes | `DEG`, `NPOLE`, `NAZIM`, `.msh` |
-| Realistic latent bugs for debug tasks | Yes — see §3.3 | — |
+| Live pathologies for debug tasks | Yes — see §3.3 | — |
 
-### 3.3 Gaps, and why each is an asset rather than a problem
+### 3.3 Task material already in the solver
 
-Four issues found in the Fortran. Each is a real defect *and* a ready-made task.
+Two kinds, and the distinction matters for how `ablation.yaml` is written.
 
-1. **The BC dispatch is commented out.** In `Solvers.f90` all three `IF (BC_TYP...)`
-   branches are commented; the thermalising branch is applied unconditionally to every
-   boundary face. The non-thermalising machinery (`Calculate_FLUX_WALL`) exists but is never
-   wired in; periodic is dead despite `Spatial_Mesh.f90` doing the face pairing.
-   → Task T5.
+**Live pathologies** — present in the working solver, no ablation needed. These are the
+most valuable tasks because the difficulty is real rather than manufactured.
 
-2. **Two acceleration variants differing by a `TAU_R` rescaling of the macroscopic system.**
-   `Synthetic_Acceleration.f90` has `OO/TAU_R` in the momentum block;
-   `Synthetic_Acceleration1.f90` multiplies through by `TAU_R` instead. Algebraically
-   identical, numerically different as `TAU_R → 0`. → Task T7.
+1. **The residual is a change between iterates, not a true residual.** With a contraction
+   factor near 1 successive iterates are close while both are far from the fixed point.
+   Measured at `TAU_R = 1e-2`, `tol = 1e-4`: 2 599 iterations, reported residual `9.99e-05`,
+   relative error in `int T dA` `1.28e-01` against the same scheme converged to
+   `1e-12` — **three orders of magnitude larger**. At `TAU_R = 1e-4` a truncated run is 89%
+   wrong in `int T dA` while reporting a residual of `2.5e-06`. → **T03**.
+2. **The published accelerated scheme converges to a different discrete fixed point than
+   the unaccelerated one** (§1.4). Under property-based grading this is not a separate
+   task — replacing the scheme with Krylov passes — so it is reported as a *finding* and
+   folded into T01's gates (see T11).
+3. **Acceleration variant B diverges.** Algebraically the same system as variant A,
+   rescaled by `TAU_R`. It diverges geometrically from the first iteration at *every*
+   Knudsen number tested, reaching NaN within ~30 iterations, and not because of
+   conditioning — the two global matrices have comparable 1-norm condition estimates.
+   → **T07**.
 
-3. **The residual is a change-between-iterates, not a true residual.** With a contraction
-   factor near 1, successive iterates are close while both are far from the fixed point.
-   The solver will report convergence at `tol=1e-8` while being materially wrong. → Task T3,
-   probably the most interesting task in the suite.
+**Capabilities to ablate** — correct in the solver, removed by `ablation.yaml` to create
+the task. Not defects; the environment generator takes them out.
 
-4. **`A_SOL` is rebuilt and LU-factorised every element, every direction, every iteration**,
-   despite depending only on iteration-invariant data. → Task T8.
+4. Both acceleration schemes (`scheme.accflag`) → T01, T02.
+5. The boundary-condition dispatch, including the diffusely reflecting wall and the
+   periodic pairing → T05.
+6. `scheme.scale_by_hmin`, the `/Hmin` scaling of the HDG stabilisation → T06.
+7. `performance.storage: stored`, which LU-factorises the per-direction operators once at
+   setup. Shipping `onthefly` restores the rebuild-and-refactorise-every-iteration
+   behaviour → T08.
+8. `scheme.on_cycle`, the sweep-graph cycle detection → T10.
 
-Two further items are pure engineering and are fixed during the port (Proposal 1 §7.3,
-§7.4): the silent restart-file read, and the quadratic global assembly.
+**Verdict: proceed.** The solver supplies both halves of at least eleven task families.
 
 ### 3.4 What is genuinely missing and must be built
 
-- Meshes at more than one refinement level (only `A1_Nx11_Ny11.msh` ships)
-- Any test suite
 - Any MMS infrastructure
 - Reference solutions in a machine-readable format
 - Non-gray/spectral physics — **out of scope, and fine**; it would multiply the work without
@@ -211,10 +265,8 @@ defects are, unusually, the most valuable part of it.
 
 ```
 stiffkinetic-bench/
-├── PROPOSAL_1_PYTHON_PORT.md
 ├── PROPOSAL_2_BENCHMARK_PROJECT.md
-├── fortran-reference/           # read-only original + golden logs + stage dumps
-├── solver-python/               # Proposal 1 deliverable; the single source of truth
+├── solver-python/               # the single source of truth
 ├── tasks/
 │   ├── t01-diffusive-acceleration/
 │   │   ├── task.toml            # metadata, budgets, tags
@@ -326,8 +378,21 @@ This check goes in `tools/validate_task.py` and must run for every task.
 Generated by the *full* solver at the task's exact discretisation, stored as `.npz`
 (`temp`, `qx`, `qy`, `temp_dofs`, `iterations`, `config_hash`), kept under a few MB per task.
 
+**A reference is certified by its transport residual, never by an iterate tolerance.**
+This matters more than it sounds. The oracle's outer loop inherits the same round-off floor
+the acceleration does, so at `TAU_R = 1e-3` it cannot meet an *iterate* tolerance of
+`1e-10` even after 60 000 iterations — while its *transport* residual sits at `1.2e-9`,
+i.e. the state is converged and the criterion is lying about it. That is T03's lesson
+applied to our own tooling, and getting it backwards would silently ship references worse
+than the runs they grade.
+
 Cross-checks before a reference is accepted:
-- CIS and GSIS agree to `rtol=1e-8` (where CIS converges at all)
+- transport residual `||A f - b||/||b|| < 1e-8` (the Krylov oracle delivers `1e-15`). Necessary,
+  not sufficient on its own at small `Kn`, hence the next line. The shipped GSIS leaves it at `1.6e-6` to `5.6e-3` and must never generate a
+  reference.
+- CIS and the fixed-point-preserving oracle (§1.4) agree to `rtol=1e-4` where CIS converges
+  at all — `TAU_R >= 1e-2` on the shrunk case. Do **not** substitute the shipped GSIS
+  here: it disagrees with CIS by up to `1.7e-2` by design.
 - in the diffusive limit, agrees with the analytic Fourier series to discretisation error
 - mesh- and angle-refined runs show monotone convergence toward it
 - ballistic limit sanity: `TAU_R → ∞` reproduces the known ballistic behaviour
@@ -356,27 +421,34 @@ implementation — retrofitting an abstraction over thirty finished tasks does n
 
 ## 6. Implementation phases and acceptance criteria
 
-### Phase A — one task, end to end (3 weeks)
+### Phase A — one task, end to end
 
-Build **only** T01. Then:
+Build **only** the v0 task. Then:
 
-1. `tools/validate_task.py` reports **oracle 5/5 pass**
-2. same tool reports **null baseline 5/5 fail**
-3. shrunk case verified to preserve the CIS/GSIS iteration-count gap (§5.4)
-4. total verification wall-clock under 15 minutes
-5. **run Claude Opus 5 + Claude Code, k=5, and record how many pass**
+1. `tools/validate_task.py` reports **oracle gate PASS k/k** and **null baseline FAIL k/k**
+2. the shrunk case preserves the pathology (§5.4)
+3. total verification wall-clock under 15 minutes
+4. **run Claude Opus 5 + Claude Code, k=5, and record gate pass rate and scores**
 
-Criterion 5 decides the project.
+Criterion 4 decides the next step — but not by pass rate alone. Under gates + score:
 
-- **5/5 pass** → the task is too easy. Do not proceed. Escalate difficulty (deeper `TAU_R`,
-  add the `TAU_N` hydrodynamic axis, tighten the fixed-point check) and repeat Phase A.
-- **0/5** → good, but check it is failing for the *right* reason. Read all five transcripts.
-  If they fail on environment friction (import errors, missing data, unclear prompt) rather
-  than on the physics, that is a broken task, not a hard one.
-- **1–2/5** → ideal. Proceed.
+- **every trial passes and the scores cluster** → the task does not discriminate at the
+  top; difficulty must come from a new family (§7, F3), not from tightening budgets;
+- **every trial passes and the scores spread** (≥ 3x between trials or models) → the
+  benchmark has a signal at the top; proceed and add weaker models and scaffolds;
+- **0/5 pass** → read all five transcripts. Failures on imports, paths or an unclear
+  prompt mean a broken task, not a hard one.
 
-**Do not skip this.** One task costs three weeks and validates or kills the entire
-direction. Thirty tasks cost six months and validate nothing until the end.
+**Record so far.** The v0.1 precursor (isothermal family only, budget-graded): 1/1 solved
+by Claude Opus 5 + Claude Code in 44 minutes and $7, with a self-written full GMRES that
+outperformed the then-oracle 3–8x. That result is what retired the v0.1 claim. The v0.2
+task `t01-square`, k=5 (2026-09-08): **4 valid trials, 4/4 pass, scores 989x – 3 293x**
+under the sweep-count rule then in force (spread 3.3x); one trial invalid (account quota).
+Every valid trial built a physics-based preconditioner for GMRES — three a coarse-angle
+transport operator, one a moment system — reaching near-Knudsen-independent counts of
+6–37 sweeps. The score rule was then changed to sweep-equivalents (§2); the solutions were
+lost to a reboot before they could be re-scored, so a fresh run under the new rule is the
+next measurement. `experiments/results/t01-square/NOTES.md`.
 
 ### Phase B — abstraction and tooling (2 weeks)
 
@@ -387,12 +459,13 @@ Gate: T01 rebuilt from the template via the toolchain, still passing all Phase A
 
 ### Phase C — task suite (8 weeks)
 
-Build T02–T10 (§7) with parameter variants. Each task must clear the Phase A criteria
+Build T02–T11 (§7) with parameter variants. Each task must clear the Phase A criteria
 individually. Track a live dashboard of task count, domain coverage, oracle status, and
 baseline solve rate.
 
-Gate: 12+ task templates, 30+ instances, all validated; measured frontier solve rate
-between 5% and 40% (below 5% the benchmark cannot discriminate; above 40% it is too easy).
+Gate: 12+ task templates, 30+ instances, all validated; across the tested models the
+score spread is at least 3x on every scored family and the gate pass rate is not saturated
+for at least two models. A suite where every agent gets the same score is not a benchmark.
 
 ### Phase D — experiments (4 weeks)
 
@@ -409,12 +482,17 @@ ablation) is reachable in ~12 weeks by trimming Phase C and D.
 
 ## 7. Task construction plan
 
-Ten families, all realisable from this codebase. `solver/` and `oracle/` given for each.
+Eleven families, all realisable from this codebase. `solver/` and `oracle/` given for each.
 
-### T01 — Diffusive-limit acceleration `[flagship]`
-Baseline: CIS only. Ask: bounded iterations across `TAU_R ∈ {1e0 … 1e-4}`.
-Oracle: GSIS. Checks: converged; iterations < 200 at stiffest; field matches reference;
-fixed point preserved.
+### T01 — Square-domain acceleration, two wall families `[flagship, built]`
+`tasks/t01-square`, §2. Baseline: source iteration only. Ask: converge every cell to the
+shipped solver's own fixed point, fast. Oracle: Krylov (§1.4). Gates and score as in §2.
+Families: F1 isothermal, F2 diffusely reflecting side walls. **F3 (periodic side walls)
+is next**: it is the one configuration where the unaided GMRES solution declares itself
+inapplicable (the partner element cannot be placed upwind, so one sweep is no longer an
+exact evaluation of the map) and falls back to source iteration — measured: it fails the
+convergence gate on the two stiff cells. F3 needs a periodic-capable oracle first; the
+periodic temperature-jump boundary of the publication's long-film test is not implemented.
 
 ### T02 — Hydrodynamic-limit acceleration
 Sweep `TAU_N → 0` at fixed large `TAU_R` — a *different* stiff limit, in which a
@@ -424,11 +502,14 @@ distinguishes the suite from the neutron-transport literature, where the second 
 time has no analogue.
 
 ### T03 — Pseudo-convergence `[flagship]`
-Ship the solver with its as-written iterate-difference residual. At `TAU_R=1e-4` it reports
-converged at `tol=1e-8` while the field is materially wrong. Ask: diagnose why the reported
-convergence is false and fix the criterion. Checks: field matches reference to `rtol=1e-6`;
-the reported residual is now a true residual; no case is "fixed" by simply tightening `tol`
-by six decades (cap the iteration budget so brute force cannot pass).
+Ship the solver with its as-written iterate-difference residual. Measured: at
+`TAU_R = 1e-2`, `tol = 1e-4` it stops after 2 599 iterations reporting `9.99e-05` while the
+relative error in `int T dA` is `1.28e-01` (reference: the same scheme at `tol = 1e-12`)
+— **three orders of magnitude larger**; at `TAU_R = 1e-4` a truncated run is 89%
+wrong in `int T dA` while reporting `2.5e-06`. Ask: diagnose why the reported convergence
+is false and fix the criterion. Checks: field matches reference to `rtol=1e-6`; the
+reported residual is a true residual; no case is "fixed" by tightening `tol` alone (cap the
+iteration budget so brute force cannot pass).
 Tests understanding rather than coding, and is very hard to solve by retrieval.
 
 ### T04 — Asymptotic preservation on an under-resolved mesh
@@ -436,25 +517,32 @@ Coarse mesh with `h >> Vg*TAU_R`, `TAU_R=1e-4`. Checks: L2 error against the por
 Fourier series below tolerance, on the coarse mesh.
 
 ### T05 — Restore the diffusely reflecting wall
-Genuinely unfinished code: `Calculate_FLUX_WALL` exists but is disconnected, and the BC
-dispatch is commented out (§3.3-1). Checks: net normal heat flux through an adiabatic
-boundary zero to `1e-10`; global energy balance closed; cross-plane case matches reference.
-Maximally authentic — it is literally an open TODO from the real work.
+Ablate the boundary-condition dispatch down to the thermalising branch, leaving the
+diffusely reflecting wall and the periodic pairing unreachable. Checks: net normal heat flux
+through an adiabatic boundary zero to `1e-10`; global energy balance closed; cross-plane
+case matches reference. The tangential projection of the trace heat flux is the subtle part
+— without it the accelerated run diverges rather than merely erring.
 
 ### T06 — Stabilisation robustness
-`ST(2)`, `ST(3)` fixed at 1.0 with `/Hmin` scaling commented out. On anisotropic and refined
-meshes the contraction factor degrades. Ask: make it bounded across the mesh family.
+Ablate `scheme.scale_by_hmin`, leaving the HDG stabilisation fixed at 1.0. On anisotropic
+and refined meshes the contraction factor degrades. Ask: make it bounded across the mesh
+family.
 Checks: contraction factor below threshold across all meshes × `DEG ∈ {1,2,3}` × `TAU_R`
 values. Directly parallels the known MIP-versus-SIP DSA robustness result.
 
-### T07 — Conditioning of the macroscopic system
-Ship variant B (the `TAU_R`-multiplied form). At `TAU_R=1e-6` it loses accuracy or
-conditioning. Ask: diagnose and fix. Checks: correct solution at `1e-6`; global matrix
-condition number below threshold.
+### T07 — A divergent acceleration variant
+Ship variant B, the `TAU_R`-multiplied form of the macroscopic system. It is algebraically
+identical to variant A and diverges geometrically from the first iteration at **every**
+Knudsen number tested, reaching NaN in ~30 iterations. It is not a conditioning problem —
+the two global matrices have comparable 1-norm condition estimates — so the obvious
+diagnosis is a false lead. Ask: diagnose and fix. Checks: converges at every `TAU_R` in the
+ladder; transport residual at round-off; field matches reference.
 
 ### T08 — Redundant factorisation `[performance]`
-Ship the version that rebuilds and factorises `A_SOL` every iteration. Ask: reduce cost by
-≥5× without changing iteration count or converged answer. Graded on `factorisation_count`
+Ship `performance.storage: onthefly`, which rebuilds and LU-factorises the per-direction
+operators every element, every direction, every iteration, despite their depending only on
+iteration-invariant data. Ask: reduce cost by ≥5× without changing iteration count or
+converged answer. Graded on `factorisation_count`
 and `sweep_count` — hardware-independent — with wall-clock only as a loose timeout.
 
 ### T09 — Method of manufactured solutions
@@ -467,10 +555,17 @@ Provide a mesh on which some directions induce a cyclic dependency, hanging the 
 ordering. Ask: detect and handle. Checks: terminates; correct solution; cycle-breaking
 logged.
 
+### T11 — Fixed-point consistency of the acceleration `[withdrawn as a task]`
+Shipping the published accelerated solver and asking for its fixed point to be repaired
+without losing speed is, under property grading, solved by discarding the scheme and using
+Krylov — the same solution as T01. §7's own rule forbids grading on the method, so T11 is
+not a separate task. What it targeted survives as T01's gate 3 and as a reported finding:
+the published scheme fails that gate on every published test point (§1.4).
+
 ### Variant axes
 Each family expands via `TAU_R` range, `TAU_N` range, `DEG`, mesh refinement,
 `NPOLE/NAZIM`, geometry (cavity / cross-plane / porous), BC mix. Target 30–40 instances
-from 10–12 templates. **Report template count and instance count separately** in the paper;
+from 11–13 templates. **Report template count and instance count separately** in the paper;
 inflating one into the other is the most common dishonesty in this genre.
 
 ### Contamination control
@@ -584,12 +679,16 @@ Sandbox compute (Modal or Daytona) is a much smaller line item.
 
 ## 10. Immediate next actions
 
-1. Execute Proposal 1 through Gate 4. Nothing here starts before CIS and GSIS are verified
-   to reach the same fixed point.
-2. Build **T01 only**, with the shrunk case, and run `validate_task.py`.
-3. Run Claude Opus 5 + Claude Code, `k=5`, on T01. Record the number.
-4. Read all five transcripts, regardless of the score.
-5. Decide, on that evidence, whether to proceed to Phase B, escalate difficulty and repeat
-   Phase A, or stop.
-
-Step 5 is a real decision point, not a formality.
+1. Record the `t01-square` k=5 result (gate pass rate, score range) in §6 and in the root
+   README; read every transcript, code the approaches.
+2. **F3, periodic side walls**: implement the periodic temperature-jump boundary; extend the
+   Krylov oracle to periodic faces (carry the periodic-face outflow in the state, or close
+   each direction's periodic coupling exactly); calibrate, certify references, validate;
+   add to `t01-square` as a third family and re-run k=5. This is the one family with
+   evidence of discriminating against the unaided GMRES solution.
+3. Tier-1 families that are not about the outer iteration and therefore not Krylov-solvable:
+   T05 (boundary-condition restoration), T09 (manufactured solutions), T10 (sweep cycles).
+4. Docker isolation (`run_rollouts.py --isolation docker`) before any number is published:
+   directory isolation leaves the full solver on the same filesystem.
+5. A second model and a second scaffold on `t01-square`, to measure the spread the score
+   is designed to expose.

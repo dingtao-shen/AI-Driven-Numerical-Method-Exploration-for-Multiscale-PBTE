@@ -1,0 +1,109 @@
+{
+  "task": "t01-square",
+  "model": "opus",
+  "k": 5,
+  "isolation": "dir",
+  "solved": 4,
+  "trials": [
+    {
+      "trial": 1,
+      "gate": true,
+      "score": 3293.157291865303,
+      "families": {
+        "F1": [
+          true,
+          3004.006551561395
+        ],
+        "F2": [
+          true,
+          3610.1402453096316
+        ]
+      },
+      "cells_passed": 10,
+      "cells": 10,
+      "agent_wall": 6456.380689579004,
+      "agent_returncode": 0,
+      "sandbox": "/tmp/claude-1000/-home-dtshen-workspace-StiKine-Bench/0e2cf9e0-b33a-4ac4-a336-d0539bbf2557/scratchpad/rollouts_sq/trial_01"
+    },
+    {
+      "trial": 2,
+      "gate": true,
+      "score": 989.3039424338059,
+      "families": {
+        "F1": [
+          true,
+          956.6370278770182
+        ],
+        "F2": [
+          true,
+          1023.0863556338246
+        ]
+      },
+      "cells_passed": 10,
+      "cells": 10,
+      "agent_wall": 7200.0,
+      "agent_returncode": -1,
+      "sandbox": "/tmp/claude-1000/-home-dtshen-workspace-StiKine-Bench/0e2cf9e0-b33a-4ac4-a336-d0539bbf2557/scratchpad/rollouts_sq/trial_02"
+    },
+    {
+      "trial": 3,
+      "gate": true,
+      "score": 2604.994567272096,
+      "families": {
+        "F1": [
+          true,
+          2423.3751115672826
+        ],
+        "F2": [
+          true,
+          2800.225463703962
+        ]
+      },
+      "cells_passed": 10,
+      "cells": 10,
+      "agent_wall": 3656.8591761839925,
+      "agent_returncode": 0,
+      "sandbox": "/tmp/claude-1000/-home-dtshen-workspace-StiKine-Bench/0e2cf9e0-b33a-4ac4-a336-d0539bbf2557/scratchpad/rollouts_sq/trial_03"
+    },
+    {
+      "trial": 4,
+      "gate": true,
+      "score": 2270.9656412648064,
+      "families": {
+        "F1": [
+          true,
+          2108.2650681530536
+        ],
+        "F2": [
+          true,
+          2446.222261948926
+        ]
+      },
+      "cells_passed": 10,
+      "cells": 10,
+      "agent_wall": 5448.337965714978,
+      "agent_returncode": 0,
+      "sandbox": "/tmp/claude-1000/-home-dtshen-workspace-StiKine-Bench/0e2cf9e0-b33a-4ac4-a336-d0539bbf2557/scratchpad/rollouts_sq/trial_04"
+    },
+    {
+      "trial": 5,
+      "gate": false,
+      "score": null,
+      "families": {
+        "F1": [
+          false,
+          null
+        ],
+        "F2": [
+          false,
+          null
+        ]
+      },
+      "cells_passed": 4,
+      "cells": 10,
+      "agent_wall": 1000.5398856310057,
+      "agent_returncode": 1,
+      "sandbox": "/tmp/claude-1000/-home-dtshen-workspace-StiKine-Bench/0e2cf9e0-b33a-4ac4-a336-d0539bbf2557/scratchpad/rollouts_sq/trial_05"
+    }
+  ]
+}

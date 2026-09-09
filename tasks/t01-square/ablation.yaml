@@ -1,0 +1,374 @@
+source: ../../solver-python
+remove_paths:
+- README.md
+- VALIDATION.md
+- cases/*.yaml
+- docs
+- out
+- pybte/acceleration
+- pybte/krylov.py
+- tests/integration/test_deviations.py
+- tests/integration/test_full_runs.py
+- tests/integration/test_regression.py
+- tests/unit/conftest_helpers.py
+- tests/unit/test_config.py
+- tests/unit/test_defect_correction.py
+- tests/unit/test_interface.py
+- tools
+new_files:
+  README.md: "# Phonon Boltzmann transport solver\n\nSteady 2D2V gray linear Callaway phonon BTE.  Nodal discontinuous Galerkin\
+    \ in\nspace, discrete ordinates in angle, source iteration in time.\n\n    from pybte import Case, Solver\n    record\
+    \ = Solver(Case.from_yaml(\"cases/kn_1e-2.yaml\")).run()\n    record.iterations, record.converged, record.temp\n\nor from\
+    \ the command line::\n\n    python -m pybte cases/kn_1e-2.yaml\n\n## The model\n\nPhonons relax by two channels with relaxation\
+    \ times `tau_R` (resistive,\nmomentum-destroying) and `tau_N` (normal, momentum-conserving), combined as\n`1/tau_C = 1/tau_R\
+    \ + 1/tau_N`.  With `Vg = L = 1` the Knudsen number is\n`tau_R`: large means ballistic, small means diffusive, and in\
+    \ the diffusive\nlimit the temperature obeys Fourier's law with `kappa = Cv Vg^2 tau_R / 3`.\n`pybte.analytic` carries\
+    \ that limit for the shipped cavity as a 200-term\nseries.\n\n## How one iteration works\n\n    while True:\n        sweep()\
+    \                 # exact transport solve, one direction at a time,\n                                # in a topological\
+    \ order of the element graph\n        compute_moments()       # T, qx, qy from the distribution\n        if residual <\
+    \ tol: break\n\nThe sweep is Gauss-Seidel: within a direction each element reads inflow from\nneighbours already updated\
+    \ in the same pass, which is what makes it an exact\nsolve for that direction.\n\n## Cases\n\nTwo boundary-condition families\
+    \ on the same square and the same\ndiscretisation (200 elements, `DEG = 2`, a `10 x 20` angular mesh,\n`tol = 1e-8`),\
+    \ each at five `(tau_R, tau_N)` pairs spanning the diffusive,\ntransition, ballistic and hydrodynamic regimes:\n\n   \
+    \ F1_*   all four walls isothermal, T = 1 on the north wall\n    F2_*   east and west walls diffusely reflecting (adiabatic)\n\
+    \nA diffusely reflecting wall re-emits, isotropically, the energy that hits\nit, so its emission depends on the solution:\
+    \ `bc.py` recomputes it from the\ndistribution at the start of every iteration.\n\n## Layout\n\n    pybte/          the\
+    \ solver\n      driver.py     the outer iteration\n      sweep.py      the transport sweep\n      moments.py    moments\
+    \ and the residual\n      basis.py      nodal DG bases\n      quadrature.py Gauss-Legendre and triangle rules\n      bc.py\
+    \         boundary conditions\n      mesh/         gmsh reader, topology, geometry\n      analytic.py   the diffusion-limit\
+    \ series\n    cases/          case files\n    meshes/         gmsh meshes\n    tests/          pytest suite\n\n## Notes\n\
+    \n* `Temp`, `Qx`, `Qy` on the run record are element *integrals*, not averages:\n  `record.temp.sum()` is the domain integral\
+    \ of `T`.  Divide by\n  `mesh.tri_area` for cell averages.\n* `NAZIM` is silently forced even.\n* The angular quadrature\
+    \ is accurate to about `1e-13`, not to machine\n  precision; do not design a test that needs better.\n"
+  cases/F1_1e-3.yaml: "# Isothermal square: T = 1 on the north wall, 0 on the other three.  Kn_R = 0.001, Kn_N = 100000.\n\
+    iteration:  {tol: 1.0e-8, tmax: 30000, true_residual: false}\nvelmesh:    {npole: 10, nazim: 20}\ndg:         {deg: 2}\n\
+    flow:       {cv: 1.0, vg: 1.0, tau_r: 0.001, tau_n: 100000}\nmesh:       {file: ../meshes/A1_Nx11_Ny11.msh}\nboundaries:\n\
+    \  - {name: SWall, phyid: 11, type: thermalising, temp: 0.0}\n  - {name: NWall, phyid: 12, type: thermalising, temp: 1.0}\n\
+    \  - {name: EWall, phyid: 13, type: thermalising, temp: 0.0}\n  - {name: WWall, phyid: 14, type: thermalising, temp: 0.0}\n\
+    restart:    {enabled: false, path: null}\noutput:     {dir: ../out/F1_1e-3, field: false, runtime_log: false, run_record:\
+    \ true}\n"
+  cases/F1_1e-2.yaml: "# Isothermal square: T = 1 on the north wall, 0 on the other three.  Kn_R = 0.01, Kn_N = 100000.\n\
+    iteration:  {tol: 1.0e-8, tmax: 30000, true_residual: false}\nvelmesh:    {npole: 10, nazim: 20}\ndg:         {deg: 2}\n\
+    flow:       {cv: 1.0, vg: 1.0, tau_r: 0.01, tau_n: 100000}\nmesh:       {file: ../meshes/A1_Nx11_Ny11.msh}\nboundaries:\n\
+    \  - {name: SWall, phyid: 11, type: thermalising, temp: 0.0}\n  - {name: NWall, phyid: 12, type: thermalising, temp: 1.0}\n\
+    \  - {name: EWall, phyid: 13, type: thermalising, temp: 0.0}\n  - {name: WWall, phyid: 14, type: thermalising, temp: 0.0}\n\
+    restart:    {enabled: false, path: null}\noutput:     {dir: ../out/F1_1e-2, field: false, runtime_log: false, run_record:\
+    \ true}\n"
+  cases/F1_1e-1.yaml: "# Isothermal square: T = 1 on the north wall, 0 on the other three.  Kn_R = 0.1, Kn_N = 100000.\niteration:\
+    \  {tol: 1.0e-8, tmax: 30000, true_residual: false}\nvelmesh:    {npole: 10, nazim: 20}\ndg:         {deg: 2}\nflow: \
+    \      {cv: 1.0, vg: 1.0, tau_r: 0.1, tau_n: 100000}\nmesh:       {file: ../meshes/A1_Nx11_Ny11.msh}\nboundaries:\n  -\
+    \ {name: SWall, phyid: 11, type: thermalising, temp: 0.0}\n  - {name: NWall, phyid: 12, type: thermalising, temp: 1.0}\n\
+    \  - {name: EWall, phyid: 13, type: thermalising, temp: 0.0}\n  - {name: WWall, phyid: 14, type: thermalising, temp: 0.0}\n\
+    restart:    {enabled: false, path: null}\noutput:     {dir: ../out/F1_1e-1, field: false, runtime_log: false, run_record:\
+    \ true}\n"
+  cases/F1_1_1.yaml: "# Isothermal square: T = 1 on the north wall, 0 on the other three.  Kn_R = 1, Kn_N = 1.\niteration:\
+    \  {tol: 1.0e-8, tmax: 30000, true_residual: false}\nvelmesh:    {npole: 10, nazim: 20}\ndg:         {deg: 2}\nflow: \
+    \      {cv: 1.0, vg: 1.0, tau_r: 1, tau_n: 1}\nmesh:       {file: ../meshes/A1_Nx11_Ny11.msh}\nboundaries:\n  - {name:\
+    \ SWall, phyid: 11, type: thermalising, temp: 0.0}\n  - {name: NWall, phyid: 12, type: thermalising, temp: 1.0}\n  - {name:\
+    \ EWall, phyid: 13, type: thermalising, temp: 0.0}\n  - {name: WWall, phyid: 14, type: thermalising, temp: 0.0}\nrestart:\
+    \    {enabled: false, path: null}\noutput:     {dir: ../out/F1_1_1, field: false, runtime_log: false, run_record: true}\n"
+  cases/F1_10_1e-2.yaml: "# Isothermal square: T = 1 on the north wall, 0 on the other three.  Kn_R = 10, Kn_N = 0.01.\niteration:\
+    \  {tol: 1.0e-8, tmax: 30000, true_residual: false}\nvelmesh:    {npole: 10, nazim: 20}\ndg:         {deg: 2}\nflow: \
+    \      {cv: 1.0, vg: 1.0, tau_r: 10, tau_n: 0.01}\nmesh:       {file: ../meshes/A1_Nx11_Ny11.msh}\nboundaries:\n  - {name:\
+    \ SWall, phyid: 11, type: thermalising, temp: 0.0}\n  - {name: NWall, phyid: 12, type: thermalising, temp: 1.0}\n  - {name:\
+    \ EWall, phyid: 13, type: thermalising, temp: 0.0}\n  - {name: WWall, phyid: 14, type: thermalising, temp: 0.0}\nrestart:\
+    \    {enabled: false, path: null}\noutput:     {dir: ../out/F1_10_1e-2, field: false, runtime_log: false, run_record:\
+    \ true}\n"
+  cases/F2_1e-3.yaml: "# Square with diffusely reflecting (adiabatic) east and west walls; T = 1 north, 0 south.  Kn_R = 0.001,\
+    \ Kn_N = 100000.\niteration:  {tol: 1.0e-8, tmax: 30000, true_residual: false}\nvelmesh:    {npole: 10, nazim: 20}\ndg:\
+    \         {deg: 2}\nflow:       {cv: 1.0, vg: 1.0, tau_r: 0.001, tau_n: 100000}\nmesh:       {file: ../meshes/A1_Nx11_Ny11.msh}\n\
+    boundaries:\n  - {name: SWall, phyid: 11, type: thermalising,    temp: 0.0}\n  - {name: NWall, phyid: 12, type: thermalising,\
+    \    temp: 1.0}\n  - {name: EWall, phyid: 13, type: nonthermalising, temp: 0.0}\n  - {name: WWall, phyid: 14, type: nonthermalising,\
+    \ temp: 0.0}\nrestart:    {enabled: false, path: null}\noutput:     {dir: ../out/F2_1e-3, field: false, runtime_log: false,\
+    \ run_record: true}\n"
+  cases/F2_1e-2.yaml: "# Square with diffusely reflecting (adiabatic) east and west walls; T = 1 north, 0 south.  Kn_R = 0.01,\
+    \ Kn_N = 100000.\niteration:  {tol: 1.0e-8, tmax: 30000, true_residual: false}\nvelmesh:    {npole: 10, nazim: 20}\ndg:\
+    \         {deg: 2}\nflow:       {cv: 1.0, vg: 1.0, tau_r: 0.01, tau_n: 100000}\nmesh:       {file: ../meshes/A1_Nx11_Ny11.msh}\n\
+    boundaries:\n  - {name: SWall, phyid: 11, type: thermalising,    temp: 0.0}\n  - {name: NWall, phyid: 12, type: thermalising,\
+    \    temp: 1.0}\n  - {name: EWall, phyid: 13, type: nonthermalising, temp: 0.0}\n  - {name: WWall, phyid: 14, type: nonthermalising,\
+    \ temp: 0.0}\nrestart:    {enabled: false, path: null}\noutput:     {dir: ../out/F2_1e-2, field: false, runtime_log: false,\
+    \ run_record: true}\n"
+  cases/F2_1e-1.yaml: "# Square with diffusely reflecting (adiabatic) east and west walls; T = 1 north, 0 south.  Kn_R = 0.1,\
+    \ Kn_N = 100000.\niteration:  {tol: 1.0e-8, tmax: 30000, true_residual: false}\nvelmesh:    {npole: 10, nazim: 20}\ndg:\
+    \         {deg: 2}\nflow:       {cv: 1.0, vg: 1.0, tau_r: 0.1, tau_n: 100000}\nmesh:       {file: ../meshes/A1_Nx11_Ny11.msh}\n\
+    boundaries:\n  - {name: SWall, phyid: 11, type: thermalising,    temp: 0.0}\n  - {name: NWall, phyid: 12, type: thermalising,\
+    \    temp: 1.0}\n  - {name: EWall, phyid: 13, type: nonthermalising, temp: 0.0}\n  - {name: WWall, phyid: 14, type: nonthermalising,\
+    \ temp: 0.0}\nrestart:    {enabled: false, path: null}\noutput:     {dir: ../out/F2_1e-1, field: false, runtime_log: false,\
+    \ run_record: true}\n"
+  cases/F2_1_1.yaml: "# Square with diffusely reflecting (adiabatic) east and west walls; T = 1 north, 0 south.  Kn_R = 1,\
+    \ Kn_N = 1.\niteration:  {tol: 1.0e-8, tmax: 30000, true_residual: false}\nvelmesh:    {npole: 10, nazim: 20}\ndg:   \
+    \      {deg: 2}\nflow:       {cv: 1.0, vg: 1.0, tau_r: 1, tau_n: 1}\nmesh:       {file: ../meshes/A1_Nx11_Ny11.msh}\n\
+    boundaries:\n  - {name: SWall, phyid: 11, type: thermalising,    temp: 0.0}\n  - {name: NWall, phyid: 12, type: thermalising,\
+    \    temp: 1.0}\n  - {name: EWall, phyid: 13, type: nonthermalising, temp: 0.0}\n  - {name: WWall, phyid: 14, type: nonthermalising,\
+    \ temp: 0.0}\nrestart:    {enabled: false, path: null}\noutput:     {dir: ../out/F2_1_1, field: false, runtime_log: false,\
+    \ run_record: true}\n"
+  cases/F2_10_1e-2.yaml: "# Square with diffusely reflecting (adiabatic) east and west walls; T = 1 north, 0 south.  Kn_R\
+    \ = 10, Kn_N = 0.01.\niteration:  {tol: 1.0e-8, tmax: 30000, true_residual: false}\nvelmesh:    {npole: 10, nazim: 20}\n\
+    dg:         {deg: 2}\nflow:       {cv: 1.0, vg: 1.0, tau_r: 10, tau_n: 0.01}\nmesh:       {file: ../meshes/A1_Nx11_Ny11.msh}\n\
+    boundaries:\n  - {name: SWall, phyid: 11, type: thermalising,    temp: 0.0}\n  - {name: NWall, phyid: 12, type: thermalising,\
+    \    temp: 1.0}\n  - {name: EWall, phyid: 13, type: nonthermalising, temp: 0.0}\n  - {name: WWall, phyid: 14, type: nonthermalising,\
+    \ temp: 0.0}\nrestart:    {enabled: false, path: null}\noutput:     {dir: ../out/F2_10_1e-2, field: false, runtime_log:\
+    \ false, run_record: true}\n"
+canary: BENCHMARK-CANARY-a7f3c21e-DO-NOT-REPRODUCE-THIS-STRING
+scrub_terms:
+- Anderson
+- DSA
+- GSIS
+- HDG
+- PARDISO
+- Synthetic_Acceleration
+- acc_variant
+- accelerate
+- accelerated
+- accelerating
+- acceleration
+- accflag
+- arnoldi
+- defect
+- diffusion synthetic
+- givens
+- gmres
+- hessenberg
+- hot_source
+- krylov
+- moment equations
+- run_krylov
+- splu
+- stabilisation
+- synthetic
+- tau_thr
+- u_trace
+- uq
+scrub_exempt: []
+patch:
+- file: pybte/__init__.py
+  find: "A fidelity port of the Fortran research solver in ``fortran-reference/``,\noffering the same two iteration schemes:\n\
+    \n``accflag = 0``  CIS  -- conventional source iteration\n``accflag = 1``  GSIS -- general synthetic iterative scheme\
+    \ (HDG macroscopic\n                 acceleration)\n\nTypical use::\n\n    from pybte import Case, Solver\n\n    case\
+    \ = Case.from_yaml(\"cases/cavity_tauR1e-3_gsis.yaml\")"
+  replace: "Typical use::\n\n    from pybte import Case, Solver\n\n    case = Case.from_yaml(\"cases/kn_1e-2.yaml\")"
+  count: 1
+- file: pybte/__init__.py
+  find: "                     Performance, Restart, Scheme, VelMesh,\n                     case_from_control_in, parse_control_in)"
+  replace: '                     Performance, Restart, Scheme, VelMesh)'
+  count: 1
+- file: pybte/__init__.py
+  find: '           "Performance", "case_from_control_in", "parse_control_in"]'
+  replace: '           "Performance"]'
+  count: 1
+- file: pybte/_numba.py
+  find: '"""Optional numba acceleration.'
+  replace: '"""Optional numba compilation.'
+  count: 1
+- file: pybte/config.py
+  find: "* ``scheme.acc_variant``   -- A (``Synthetic_Acceleration.f90``, the default)\n                              or B\
+    \ (``Synthetic_Acceleration1.f90``)\n* ``scheme.stabilisation`` -- the HDG ``ST(1:3)``\n"
+  replace: ''
+  count: 1
+- file: pybte/config.py
+  find: "    accflag: int = 0                     # 0 = CIS, 1 = GSIS\n    acc_variant: str = \"A\"\n    stabilisation: list\
+    \ = field(default_factory=lambda: [1.0, 1.0, 1.0])\n    #: divide ST(2:3) by the global minimum element height\n    scale_by_hmin:\
+    \ bool = False\n    #: 'raise' or 'break' when a direction's sweep graph has a cycle\n    on_cycle: str = \"raise\""
+  replace: "    #: 'raise' or 'break' when a direction's sweep graph has a cycle\n    on_cycle: str = \"raise\""
+  count: 1
+- file: pybte/config.py
+  find: "        self.accflag = int(self.accflag)\n        self.acc_variant = str(self.acc_variant).upper()\n        self.stabilisation\
+    \ = [float(v) for v in self.stabilisation]\n        self.scale_by_hmin = bool(self.scale_by_hmin)"
+  replace: ''
+  count: 1
+- file: pybte/config.py
+  find: "        if self.scheme.acc_variant not in (\"A\", \"B\"):\n            raise ValueError(\"scheme.acc_variant must\
+    \ be 'A' or 'B'\")\n        if len(self.scheme.stabilisation) != 3:\n            raise ValueError(\"scheme.stabilisation\
+    \ must have three entries\")\n"
+  replace: ''
+  count: 1
+- file: pybte/config.py
+  find: '    tau_thr: float = 1.0
+
+    '
+  replace: ''
+  count: 1
+- file: pybte/config.py
+  find: '        self.tau_thr = float(self.tau_thr)
+
+    '
+  replace: ''
+  count: 1
+- file: pybte/driver.py
+  find: "        IF CIS  : Calculate_Macro_Properties\n        IF GSIS : HoT source; global trace solve; local recovery; correction\n"
+  replace: '        Calculate_Macro_Properties
+
+    '
+  count: 1
+- file: pybte/driver.py
+  find: "        self.acc = None\n        if c.scheme.accflag == 1:\n            from .acceleration import Acceleration\n\
+    \            self.acc = Acceleration(self)\n\n"
+  replace: ''
+  count: 1
+- file: pybte/driver.py
+  find: "        if self.acc is None:\n            compute_moments(self.vdf, self.ctx.cxv, self.ctx.cyv, self.ctx.domega,\n\
+    \                            self.integrals.int_tri, self.case.flow.cv, self.mom)\n        else:\n            self.acc.apply()"
+  replace: "        compute_moments(self.vdf, self.ctx.cxv, self.ctx.cyv, self.ctx.domega,\n                        self.integrals.int_tri,\
+    \ self.case.flow.cv, self.mom)"
+  count: 1
+- file: pybte/driver.py
+  find: "            if res < tol:\n                # With a frozen defect (scheme.defect_every = 0) reaching the\n      \
+    \          # inner fixed point is not the end: refresh the defect, which\n                # moves the fixed point, and\
+    \ carry on.  Convergence is when\n                # both the iterate and the defect have stopped moving.\n           \
+    \     if (self.acc is not None and self.acc.omega\n                        and not self.acc.defect_every\n           \
+    \             and self.acc.refresh_defect() > tol):\n                    continue\n                converged = True"
+  replace: "            if res < tol:\n                converged = True"
+  count: 1
+- file: pybte/driver.py
+  find: "            scheme=scheme,\n            acc_variant=c.scheme.acc_variant if c.scheme.accflag == 1 else None,\n"
+  replace: '            scheme=scheme,
+
+    '
+  count: 1
+- file: pybte/driver.py
+  find: "        if self.acc is not None:\n            rec.diagnostics.update(self.acc.diagnostics())\n        if extra:"
+  replace: '        if extra:'
+  count: 1
+- file: pybte/driver.py
+  find: '            uq = self.acc.uq if self.acc is not None else None
+
+    '
+  replace: ''
+  count: 1
+- file: pybte/driver.py
+  find: '                self.ctx.domega, c.flow.cv, px, py, triid, uq=uq,'
+  replace: '                self.ctx.domega, c.flow.cv, px, py, triid,'
+  count: 1
+- file: pybte/io_output.py
+  find: "    scheme: str = \"CIS\"\n    acc_variant: str | None = None"
+  replace: '    scheme: str = "CIS"'
+  count: 1
+- file: pyproject.toml
+  find: 'description = "Steady 2D2V gray linear Callaway phonon BTE: nodal DG in space, discrete ordinates in angle, CIS and
+    GSIS iteration"'
+  replace: 'description = "Steady 2D2V gray linear Callaway phonon BTE: nodal DG in space, discrete ordinates in angle"'
+  count: 1
+- file: pyproject.toml
+  find: "keywords = [\"phonon\", \"Boltzmann\", \"discontinuous Galerkin\", \"discrete ordinates\",\n            \"GSIS\"\
+    , \"synthetic acceleration\", \"heat conduction\"]"
+  replace: "keywords = [\"phonon\", \"Boltzmann\", \"discontinuous Galerkin\", \"discrete ordinates\",\n            \"heat\
+    \ conduction\"]"
+  count: 1
+- file: pybte/config.py
+  find: "    #: Experimental: relaxation on the lagged consistency defect that removes\n    #: the GSIS/CIS fixed-point displacement.\
+    \  ``0.0`` (default) is the\n    #: shipped damped blend; see docs/DEFECT_CORRECTION.md.\n    defect_omega: float = 0.0\n\
+    \    #: Update the defect only every N iterations.  Between updates it is\n    #: frozen, which leaves the GSIS iteration\
+    \ matrix -- and therefore the\n    #: convergence rate -- exactly as published; only the fixed point moves.\n    defect_every:\
+    \ int = 1\n    #: Anderson-acceleration window on the outer defect sequence.  0 = plain\n    #: relaxation.  The outer\
+    \ map ``d -> o(d)`` is affine, so Anderson applies\n    #: exactly; it contracts at ~0.95 unaccelerated, which is what\
+    \ makes the\n    #: unaccelerated outer loop useless.\n    defect_anderson: int = 0\n"
+  replace: ''
+  count: 1
+- file: pybte/config.py
+  find: "        self.defect_omega = float(self.defect_omega)\n        self.defect_every = int(self.defect_every)\n      \
+    \  if self.defect_every < 0:\n            raise ValueError(\"scheme.defect_every must be >= 0\")\n        self.defect_anderson\
+    \ = int(self.defect_anderson)\n        if self.defect_anderson < 0:\n            raise ValueError(\"scheme.defect_anderson\
+    \ must be >= 0\")\n        if not 0.0 <= self.defect_omega <= 1.0:\n            raise ValueError(\"scheme.defect_omega\
+    \ must be in [0, 1]\")\n"
+  replace: ''
+  count: 1
+- file: pybte/__main__.py
+  find: "    if args.variant is not None:\n        case.scheme.acc_variant = args.variant\n"
+  replace: ''
+  count: 1
+- file: pybte/__main__.py
+  find: "        print(f\"       scheme={'GSIS ' + case.scheme.acc_variant if case.scheme.accflag else 'CIS'}\"\n        \
+    \      f\"  tau_R={case.flow.tau_r:g} tau_N={case.flow.tau_n:g} \""
+  replace: '        print(f"       tau_R={case.flow.tau_r:g} tau_N={case.flow.tau_n:g} "'
+  count: 1
+- file: pybte/__main__.py
+  find: "    if s.acc is not None:\n        print(f\"GSIS variant {case.scheme.acc_variant}: \"\n              f\"global matrix\
+    \ {s.acc.K.shape[0]} x {s.acc.K.shape[0]}, \"\n              f\"nnz {s.acc.K.nnz}\")\n"
+  replace: ''
+  count: 1
+- file: pybte/__main__.py
+  find: '    r.add_argument("--variant", default=None, choices=["A", "B"])
+
+    '
+  replace: ''
+  count: 1
+- file: pybte/analytic.py
+  find: '``kappa = Cv * Vg^2 * tau_R / 3`` (which is exactly the coefficient the GSIS
+
+    momentum equation carries: ``q = -(Cv*tau_R/3) grad T`` at ``Vg = 1``)::'
+  replace: '``kappa = Cv * Vg^2 * tau_R / 3``::'
+  count: 1
+- file: pybte/bc.py
+  find: "            # points.  Record it: the HDG global assembly has to permute the\n            # partner's rows, and the\
+    \ reference -- where the periodic branch\n            # is dead code -- does not."
+  replace: "            # points.  Record it so a consumer of the pairing can permute\n            # the partner's rows."
+  count: 1
+- file: pybte/mesh/topology.py
+  find: '*ordering* produced here is load-bearing: face ids feed the HDG global matrix
+
+    ordering, and triangle ids feed ``TRI_ORDER``''s tie-breaking, so both must
+
+    match the Fortran element-for-element.'
+  replace: '*ordering* produced here is load-bearing: triangle ids feed ``TRI_ORDER``''s
+
+    tie-breaking, so it must match the Fortran element-for-element.'
+  count: 1
+- file: pybte/sweep.py
+  find: "\n        **GSIS.**  The correction moves ``vdf`` and the moments together to a\n        state that does *not* satisfy\
+    \ the transport system, and this is what\n        detects it -- 3.2e-03 at ``tau_R = 1e-1`` where CIS reaches 4.3e-14.\n\
+    \        That is the evidence behind docs/LIMITATIONS.md #1.\n"
+  replace: ''
+  count: 1
+- file: pybte/io_output.py
+  find: "def sample_fields(mesh, basis, vdf, cxv, cyv, domega, cv, px, py, triid,\n                  uq=None, ndof_tri=None):\n\
+    \    \"\"\"Evaluate T, qx, qy (and the GSIS stress trio) on the sampling grid."
+  replace: "def sample_fields(mesh, basis, vdf, cxv, cyv, domega, cv, px, py, triid,\n                  ndof_tri=None):\n\
+    \    \"\"\"Evaluate T, qx, qy on the sampling grid."
+  count: 1
+- file: pybte/io_output.py
+  find: "    if uq is None:\n        z = np.zeros((nxp, nyp))\n        return pT, pqx, pqy, z, z.copy(), z.copy()\n\n    lxx\
+    \ = uq[3 * nd:4 * nd, :].T\n    lxy = uq[4 * nd:5 * nd, :].T\n    lyx = uq[5 * nd:6 * nd, :].T\n    lyy = uq[6 * nd:7\
+    \ * nd, :].T\n    pxx = gather(-4.0 / 3.0 * lxx + 2.0 / 3.0 * lyy)\n    pxy = gather(-lxy - lyx)\n    pyy = gather(2.0\
+    \ / 3.0 * lxx - 4.0 / 3.0 * lyy)\n    return pT, pqx, pqy, pxx, pxy, pyy"
+  replace: "    z = np.zeros((nxp, nyp))\n    return pT, pqx, pqy, z, z.copy(), z.copy()"
+  count: 1
+- file: tests/conftest.py
+  find: '    return Case.from_yaml(CASES / "cavity_tauR1e-3_cis.yaml")'
+  replace: '    return Case.from_yaml(CASES / "kn_1e-3.yaml")'
+  count: 1
+- file: tests/unit/test_sweep_kernels.py
+  find: cavity_tauR1e-3_cis.yaml
+  replace: kn_1e-3.yaml
+  count: 5
+- file: pybte/driver.py
+  find: "    def run(self, callback=None, progress_every: int = 0) -> RunRecord:\n        if self.case.scheme.method == \"\
+    krylov\":\n            from .krylov import run_krylov\n            return run_krylov(self, callback, progress_every)\n\
+    \        return self._run_source(callback, progress_every)\n\n    def _run_source(self, callback=None, progress_every:\
+    \ int = 0) -> RunRecord:\n        \"\"\"Source iteration: ``Calculate_Residual_T < tol``, as the Fortran.\"\"\"\n"
+  replace: "    def run(self, callback=None, progress_every: int = 0) -> RunRecord:\n        \"\"\"Source iteration: ``Calculate_Residual_T\
+    \ < tol``, as the Fortran.\"\"\"\n"
+  count: 1
+- file: pybte/config.py
+  find: "    #: How the outer iteration is driven.  ``source``: Richardson / source\n    #: iteration, the historical behaviour\
+    \ (with ``accflag = 1``, GSIS).\n    #: ``krylov``: GMRES on ``(I - T) u = g``, one sweep per product -- same\n    #:\
+    \ fixed point as source iteration; raises where a sweep is not an exact\n    #: evaluation of the map (broken cycles,\
+    \ periodic faces).  See krylov.py.\n    method: str = \"source\"\n    krylov_tol_factor: float = 1.0e-6\n    krylov_max_bytes:\
+    \ float = 5.0e8\n    krylov_max_rounds: int = 3\n    krylov_precond: bool = False\n"
+  replace: ''
+  count: 1
+- file: pybte/config.py
+  find: "        self.method = str(self.method).lower()\n        if self.method not in (\"source\", \"krylov\"):\n       \
+    \     raise ValueError(\"scheme.method must be 'source' or 'krylov'\")\n        self.krylov_tol_factor = float(self.krylov_tol_factor)\n\
+    \        self.krylov_max_bytes = float(self.krylov_max_bytes)\n        self.krylov_max_rounds = int(self.krylov_max_rounds)\n\
+    \        self.krylov_precond = bool(self.krylov_precond)\n        if self.krylov_max_bytes <= 0 or self.krylov_max_rounds\
+    \ < 1:\n            raise ValueError(\"scheme.krylov_max_bytes must be > 0 and \"\n                             \"krylov_max_rounds\
+    \ >= 1\")\n"
+  replace: ''
+  count: 1
+- file: pybte/driver.py
+  find: '                            scheme="GSIS" if c.scheme.accflag == 1 else "CIS")'
+  replace: '                            scheme="CIS")'
+  count: 1
+truncate:
+- file: pybte/config.py
+  marker: 'def _fortran_scalar(tok: str):'

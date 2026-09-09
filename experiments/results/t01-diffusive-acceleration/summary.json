@@ -1,0 +1,17 @@
+{
+  "task": "t01-diffusive-acceleration",
+  "model": "opus",
+  "k": 1,
+  "isolation": "dir",
+  "solved": 1,
+  "trials": [
+    {
+      "trial": 1,
+      "score": 1.0,
+      "cases_passed": 5,
+      "agent_wall": 2624.373888433998,
+      "agent_returncode": 0,
+      "sandbox": "/tmp/claude-1000/-home-dtshen-workspace-StiKine-Bench/0e2cf9e0-b33a-4ac4-a336-d0539bbf2557/scratchpad/rollouts/trial_01"
+    }
+  ]
+}
