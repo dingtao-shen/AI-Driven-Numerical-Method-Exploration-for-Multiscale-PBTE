@@ -1,0 +1,1777 @@
+Binary files environment/pybte/_bte.cpython-311-x86_64-linux-gnu.so and solution/pybte/_bte.cpython-311-x86_64-linux-gnu.so differ
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/_ckernels.py solution/pybte/_ckernels.py
+--- environment/pybte/_ckernels.py	1970-01-01 08:00:00.000000000 +0800
++++ solution/pybte/_ckernels.py	2026-09-09 22:35:33.130110288 +0800
+@@ -0,0 +1,137 @@
++"""ctypes binding for the compiled kernels in ``_csrc/bte.c``.
++
++Optional in exactly the sense numba is optional: if the shared library is not
++there, or will not load, :data:`HAVE_C` is ``False`` and the solver falls
++back to the jitted kernels and then to the pure-numpy ones.  Nothing about
++the answer depends on which is used.
++
++Why compile ahead of time at all, when numba is already available: the jitted
++kernels are compiled or deserialised on *first call*, which lands inside the
++solve.  A warm numba cache costs about 0.2 s to load and a cold one several
++seconds -- against a solve that now takes about 0.1 s.  A ``.so`` is mapped
++in microseconds and cannot go stale.
++
++Build it with::
++
++    python -m pybte.build_ext
++"""
++from __future__ import annotations
++
++import ctypes
++import os
++import subprocess
++import sys
++import sysconfig
++from pathlib import Path
++
++import numpy as np
++
++__all__ = ["HAVE_C", "LIB", "build", "library_path", "sweep", "build_inverse",
++           "sweep_order", "set_num_threads", "num_threads"]
++
++_HERE = Path(__file__).resolve().parent
++_SRC = _HERE / "_csrc" / "bte.c"
++
++_i32 = np.int32
++_c_i32p = ctypes.POINTER(ctypes.c_int32)
++_c_dp = ctypes.POINTER(ctypes.c_double)
++
++
++def library_path() -> Path:
++    """Where the compiled kernel library lives for this interpreter."""
++    suffix = sysconfig.get_config_var("EXT_SUFFIX") or ".so"
++    # not an importable extension module, just a shared object; keep the
++    # platform tag so two interpreters can share a source tree
++    return _HERE / f"_bte{suffix}"
++
++
++def build(verbose: bool = False) -> Path:
++    """Compile ``_csrc/bte.c`` into the library, returning its path."""
++    out = library_path()
++    cc = os.environ.get("CC") or sysconfig.get_config_var("CC") or "cc"
++    cmd = [*cc.split(), "-O3", "-fPIC", "-shared", "-fopenmp",
++           "-funroll-loops", "-fno-math-errno", str(_SRC), "-o", str(out), "-lm"]
++    if verbose:
++        print(" ".join(cmd))
++    subprocess.run(cmd, check=True)
++    return out
++
++
++def _load():
++    path = library_path()
++    if not path.exists():
++        return None
++    try:
++        lib = ctypes.CDLL(str(path))
++    except OSError:                                  # pragma: no cover
++        return None
++    lib.bte_sweep.restype = None
++    lib.bte_sweep.argtypes = [
++        ctypes.c_int, ctypes.c_int, ctypes.c_int, _c_i32p, _c_dp, _c_dp,
++        ctypes.c_double, _c_dp, _c_dp, _c_dp, _c_dp, _c_dp, _c_dp,
++        _c_i32p, _c_i32p, _c_i32p, _c_i32p, _c_i32p, _c_dp, _c_dp, _c_dp, _c_dp]
++    lib.bte_build_inverse.restype = ctypes.c_int
++    lib.bte_build_inverse.argtypes = [
++        ctypes.c_int, ctypes.c_int, ctypes.c_int, _c_dp, _c_dp, ctypes.c_double,
++        _c_dp, _c_dp, _c_dp, _c_dp, _c_dp, _c_dp, _c_dp]
++    lib.bte_set_threads.restype = None
++    lib.bte_set_threads.argtypes = [ctypes.c_int]
++    lib.bte_num_threads.restype = ctypes.c_int
++    lib.bte_num_threads.argtypes = []
++    lib.bte_order.restype = ctypes.c_int
++    lib.bte_order.argtypes = [
++        ctypes.c_int, ctypes.c_int, _c_i32p, _c_dp, _c_dp, _c_dp, _c_dp,
++        _c_i32p, _c_i32p, ctypes.c_int]
++    return lib
++
++
++_DISABLE = os.environ.get("PYBTE_NO_C", "").strip() not in ("", "0", "false", "False")
++LIB = None if _DISABLE else _load()
++HAVE_C = LIB is not None
++
++
++# -- argument helpers -------------------------------------------------------
++def _d(a):
++    return a.ctypes.data_as(_c_dp)
++
++
++def _i(a):
++    return a.ctypes.data_as(_c_i32p)
++
++
++def set_num_threads(n: int) -> int:
++    """Cap the OpenMP team size; ``n = 0`` leaves the default alone."""
++    if n > 0:
++        LIB.bte_set_threads(int(n))
++    return num_threads()
++
++
++def num_threads() -> int:
++    return int(LIB.bte_num_threads())
++
++
++def sweep(ctx, sa, sb, sc, bc_temp, vdf) -> None:
++    """One transport sweep with the compiled kernel."""
++    ndir, ntri, nd = vdf.shape
++    LIB.bte_sweep(ndir, ntri, nd, _i(ctx.order), _d(ctx.cxv), _d(ctx.cyv),
++                  ctypes.c_double(ctx.cv), _d(sa), _d(sb), _d(sc),
++                  _d(ctx.ttfc), _d(ctx.nx), _d(ctx.ny), _i(ctx.tri_faces),
++                  _i(ctx.face_bc), _i(ctx.neighbour), _i(ctx.periodic_tri),
++                  _i(ctx.bc_type), _d(bc_temp), _d(ctx.flux_wall),
++                  _d(ctx.inv), _d(vdf))
++
++
++def build_inverse(cxv, cyv, inv_tau_c, mass, gx, gy, fcm, nx, ny, out) -> int:
++    ndir = cxv.size
++    nd, _, ntri = mass.shape
++    return int(LIB.bte_build_inverse(
++        ndir, ntri, nd, _d(cxv), _d(cyv), ctypes.c_double(inv_tau_c),
++        _d(mass), _d(gx), _d(gy), _d(fcm), _d(nx), _d(ny), _d(out)))
++
++
++def sweep_order(neighbour, nx, ny, cxv, cyv, order, cycles, allow_break) -> int:
++    ndir = cxv.size
++    ntri = neighbour.shape[0]
++    return int(LIB.bte_order(ndir, ntri, _i(neighbour), _d(nx), _d(ny),
++                             _d(cxv), _d(cyv), _i(order), _i(cycles),
++                             int(bool(allow_break))))
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/_csrc/bte.c solution/pybte/_csrc/bte.c
+--- environment/pybte/_csrc/bte.c	1970-01-01 08:00:00.000000000 +0800
++++ solution/pybte/_csrc/bte.c	2026-09-09 22:35:33.129769193 +0800
+@@ -0,0 +1,325 @@
++/* Compiled kernels: the transport sweep, the element operators, the sweep
++ * ordering.
++ *
++ * These are the same three loops as pybte/_kernels.py, in C, for two reasons
++ * that have nothing to do with the arithmetic:
++ *
++ *   - a jitted kernel is compiled or loaded on first call, inside the solve
++ *     it is supposed to be timing.  On this problem size that dominates: a
++ *     warm numba cache costs ~0.2 s to load and a cold one several seconds,
++ *     against a solve of ~0.1 s.  A shared library is mapped in microseconds.
++ *   - the sweep here applies a precomputed *inverse* rather than an LU pair,
++ *     and hoists the scattering source contraction out of the direction loop,
++ *     which is worth about 2x.
++ *
++ * Nothing else changes: same discretisation, same upwind flux, same boundary
++ * dispatch, same Gauss-Seidel ordering.  pybte falls back to the numba (or
++ * pure numpy) kernels when this library is not present, and the two agree to
++ * round-off -- see tests/unit/test_ckernels.py.
++ *
++ * Build:  python -m pybte.build_ext        (or pybte/_ckernels.py::build)
++ */
++#include <math.h>
++#include <stdint.h>
++#include <stdlib.h>
++#include <string.h>
++
++#ifdef _OPENMP
++#include <omp.h>
++#endif
++
++#define FOUR_PI 12.566370614359172464
++
++/* Cap the OpenMP team size.  Directions are independent, so any value gives
++ * identical results; 0 leaves the runtime's default alone.               */
++void bte_set_threads(int n)
++{
++#ifdef _OPENMP
++    if (n > 0)
++        omp_set_num_threads(n);
++#else
++    (void)n;
++#endif
++}
++
++int bte_num_threads(void)
++{
++#ifdef _OPENMP
++    return omp_get_max_threads();
++#else
++    return 1;
++#endif
++}
++
++/* ------------------------------------------------------------------ */
++/* in-place inverse of a small dense matrix, Gauss-Jordan with partial
++ * pivoting.  Returns 0 on success, the failing column (1-based) if a pivot
++ * is exactly zero.                                                     */
++static int invert_small(double *a, int n, double *work, int *piv)
++{
++    int i, j, k, p;
++    double big, v, r;
++
++    for (i = 0; i < n * n; ++i)
++        work[i] = (i / n == i % n) ? 1.0 : 0.0;
++
++    for (k = 0; k < n; ++k) {
++        p = k;
++        big = fabs(a[k * n + k]);
++        for (i = k + 1; i < n; ++i) {
++            v = fabs(a[i * n + k]);
++            if (v > big) { big = v; p = i; }
++        }
++        if (a[p * n + k] == 0.0)
++            return k + 1;
++        if (p != k) {
++            for (j = 0; j < n; ++j) {
++                v = a[k * n + j]; a[k * n + j] = a[p * n + j]; a[p * n + j] = v;
++                v = work[k * n + j]; work[k * n + j] = work[p * n + j];
++                work[p * n + j] = v;
++            }
++        }
++        r = 1.0 / a[k * n + k];
++        for (j = 0; j < n; ++j) {
++            a[k * n + j] *= r;
++            work[k * n + j] *= r;
++        }
++        for (i = 0; i < n; ++i) {
++            if (i == k) continue;
++            v = a[i * n + k];
++            if (v == 0.0) continue;
++            for (j = 0; j < n; ++j) {
++                a[i * n + j] -= v * a[k * n + j];
++                work[i * n + j] -= v * work[k * n + j];
++            }
++        }
++    }
++    memcpy(a, work, (size_t)n * n * sizeof(double));
++    (void)piv;
++    return 0;
++}
++
++/* ------------------------------------------------------------------ */
++/* A_SOL(m,l) for one element and one direction -- Solvers.f90's expression.
++ * mass is (nd, nd, n_tris), gx/gy are (n_tris, nd, nd), fcm is
++ * (n_tris, 3, nd, nd).                                                  */
++static void fill_a_sol(double *a, int i, int ntri, int nd, double cxd,
++                       double cyd, double inv_tau_c, const double *mass,
++                       const double *gx, const double *gy, const double *fcm,
++                       const double *nx, const double *ny)
++{
++    int m, l, il;
++    double w[3];
++    const double *g0 = gx + (size_t)i * nd * nd;
++    const double *g1 = gy + (size_t)i * nd * nd;
++
++    for (il = 0; il < 3; ++il) {
++        double s = cxd * nx[i * 3 + il] + cyd * ny[i * 3 + il];
++        w[il] = 0.5 * (s + fabs(s));
++    }
++    for (m = 0; m < nd; ++m) {
++        for (l = 0; l < nd; ++l) {
++            double v = inv_tau_c * mass[((size_t)m * nd + l) * ntri + i]
++                       - cxd * g0[m * nd + l] - cyd * g1[m * nd + l];
++            for (il = 0; il < 3; ++il)
++                v += w[il] * fcm[(((size_t)i * 3 + il) * nd + m) * nd + l];
++            a[m * nd + l] = v;
++        }
++    }
++}
++
++/* Build and invert A_SOL for every (direction, element) pair.
++ * mass : (nd, nd, n_tris)   gx, gy : (n_tris, nd, nd)
++ * fcm  : (n_tris, 3, nd, nd)  nx, ny : (n_tris, 3)
++ * out  : (ndir, n_tris, nd, nd)                                        */
++int bte_build_inverse(int ndir, int ntri, int nd,
++                      const double *cxv, const double *cyv, double inv_tau_c,
++                      const double *mass, const double *gx, const double *gy,
++                      const double *fcm, const double *nx, const double *ny,
++                      double *out)
++{
++    int bad = 0;
++    int d;
++#pragma omp parallel for schedule(static) reduction(+:bad)
++    for (d = 0; d < ndir; ++d) {
++        double *a = (double *)malloc((size_t)nd * nd * sizeof(double));
++        double *work = (double *)malloc((size_t)nd * nd * sizeof(double));
++        int i;
++        for (i = 0; i < ntri; ++i) {
++            double *dst = out + ((size_t)d * ntri + i) * nd * nd;
++            fill_a_sol(a, i, ntri, nd, cxv[d], cyv[d], inv_tau_c, mass, gx, gy,
++                       fcm, nx, ny);
++            if (invert_small(a, nd, work, NULL) != 0)
++                bad += 1;
++            memcpy(dst, a, (size_t)nd * nd * sizeof(double));
++        }
++        free(a);
++        free(work);
++    }
++    return bad;
++}
++
++/* ------------------------------------------------------------------ */
++/* One transport sweep.
++ *
++ * sa/sb/sc are the three scattering-source fields already contracted with
++ * the mass matrix, (n_tris, nd) each; the per-direction source is
++ * src[m] = sa[i,m] + cx sb[i,m] + cy sc[i,m].  Hoisting that contraction out
++ * of the direction loop is most of the speed-up over the jitted kernel.   */
++void bte_sweep(int ndir, int ntri, int nd,
++               const int32_t *order, const double *cxv, const double *cyv,
++               double cv,
++               const double *sa, const double *sb, const double *sc,
++               const double *ttfc, const double *nx, const double *ny,
++               const int32_t *tri_faces, const int32_t *face_bc,
++               const int32_t *neighbour, const int32_t *periodic_tri,
++               const int32_t *bc_type, const double *bc_temp,
++               const double *flux_wall, const double *inv, double *vdf)
++{
++    int d;
++#pragma omp parallel for schedule(static)
++    for (d = 0; d < ndir; ++d) {
++        double *src = (double *)malloc((size_t)nd * sizeof(double));
++        const double cxd = cxv[d];
++        const double cyd = cyv[d];
++        const int32_t *ord = order + (size_t)d * ntri;
++        double *vd = vdf + (size_t)d * ntri * nd;
++        const double *invd = inv + (size_t)d * ntri * nd * nd;
++        int k, m, l, il;
++        for (k = 0; k < ntri; ++k) {
++            const int i = ord[k];
++            for (m = 0; m < nd; ++m)
++                src[m] = sa[(size_t)i * nd + m] + cxd * sb[(size_t)i * nd + m]
++                         + cyd * sc[(size_t)i * nd + m];
++            for (il = 0; il < 3; ++il) {
++                double s = cxd * nx[i * 3 + il] + cyd * ny[i * 3 + il];
++                double w = 0.5 * (s - fabs(s));
++                const double *tt;
++                int fc, bc, typ, iext;
++                if (w == 0.0) continue;
++                tt = ttfc + ((size_t)i * 3 + il) * nd * nd;
++                fc = tri_faces[i * 3 + il];
++                bc = face_bc[fc];
++                typ = (bc < 0) ? -1 : bc_type[bc];
++                if (bc < 0 || typ == 3) {
++                    const double *fl;
++                    iext = (bc < 0) ? neighbour[i * 3 + il] : periodic_tri[fc];
++                    fl = vd + (size_t)iext * nd;
++                    for (m = 0; m < nd; ++m) {
++                        double acc = 0.0;
++                        for (l = 0; l < nd; ++l)
++                            acc += tt[m * nd + l] * fl[l];
++                        src[m] -= w * acc;
++                    }
++                } else if (typ == 2) {
++                    const double *fw = flux_wall + (size_t)fc * nd;
++                    for (m = 0; m < nd; ++m)
++                        src[m] += w * fw[m];
++                } else {
++                    double tw = cv / 4.0 / M_PI * bc_temp[bc];
++                    for (m = 0; m < nd; ++m)
++                        src[m] -= w * (tw * tt[m * nd]);
++                }
++            }
++            {
++                const double *ai = invd + (size_t)i * nd * nd;
++                double *f = vd + (size_t)i * nd;
++                for (m = 0; m < nd; ++m) {
++                    double acc = 0.0;
++                    for (l = 0; l < nd; ++l)
++                        acc += ai[m * nd + l] * src[l];
++                    f[m] = acc;
++                }
++            }
++        }
++        free(src);
++    }
++}
++
++/* ------------------------------------------------------------------ */
++/* Sweep ordering: the pass number of Matrix.f90::Init_Triangle_Order.
++ *
++ * The Fortran scans elements in ascending index order and emits every one
++ * whose inflow faces are all cleared, clearing neighbours' flags as it goes,
++ * so an element later in the same scan can go in the same pass.  Element i
++ * is therefore emitted in pass
++ *
++ *     p(i) = max over upwind j of ( p(j) + [j > i] ) ,   1 if it has none,
++ *
++ * and the order is that pass number, ties broken by ascending index.       */
++int bte_order(int ndir, int ntri, const int32_t *neighbour,
++              const double *nx, const double *ny,
++              const double *cxv, const double *cyv,
++              int32_t *order, int32_t *cycles, int allow_break)
++{
++    int status = 0;
++    int d;
++#pragma omp parallel for schedule(static) reduction(+:status)
++    for (d = 0; d < ndir; ++d) {
++        signed char *ioflag = (signed char *)malloc((size_t)ntri * 3);
++        unsigned char *inarray = (unsigned char *)malloc((size_t)ntri);
++        int32_t *ord = order + (size_t)d * ntri;
++        int i, il, k, num = 0, broken = 0;
++        for (i = 0; i < ntri; ++i) {
++            inarray[i] = 1;
++            for (il = 0; il < 3; ++il) {
++                signed char f = 0;
++                if (neighbour[i * 3 + il] >= 0) {
++                    double flux = cxv[d] * nx[i * 3 + il] + cyv[d] * ny[i * 3 + il];
++                    f = (flux > 0.0) ? 1 : ((flux < 0.0) ? -1 : 0);
++                }
++                ioflag[i * 3 + il] = f;
++            }
++        }
++        while (num < ntri) {
++            int progressed = 0;
++            for (i = 0; i < ntri; ++i) {
++                int ready = 1;
++                if (!inarray[i]) continue;
++                for (il = 0; il < 3; ++il)
++                    if (ioflag[i * 3 + il] == -1) { ready = 0; break; }
++                if (!ready) continue;
++                ord[num++] = i;
++                inarray[i] = 0;
++                progressed = 1;
++                for (il = 0; il < 3; ++il) {
++                    int t2 = neighbour[i * 3 + il];
++                    if (t2 < 0) continue;
++                    for (k = 0; k < 3; ++k)
++                        if (neighbour[t2 * 3 + k] == i) {
++                            ioflag[t2 * 3 + k] = 0;
++                            break;
++                        }
++                }
++            }
++            if (!progressed) {
++                int best = -1, best_in = 4;
++                if (!allow_break) { status += 1; break; }
++                for (i = 0; i < ntri; ++i) {
++                    int cnt = 0;
++                    if (!inarray[i]) continue;
++                    for (il = 0; il < 3; ++il)
++                        if (ioflag[i * 3 + il] == -1) cnt++;
++                    if (cnt < best_in) { best_in = cnt; best = i; }
++                }
++                if (best < 0) { status += 1; break; }
++                ord[num++] = best;
++                inarray[best] = 0;
++                broken++;
++                for (il = 0; il < 3; ++il) {
++                    int t2 = neighbour[best * 3 + il];
++                    if (t2 < 0) continue;
++                    for (k = 0; k < 3; ++k)
++                        if (neighbour[t2 * 3 + k] == best) {
++                            ioflag[t2 * 3 + k] = 0;
++                            break;
++                        }
++                }
++            }
++        }
++        cycles[d] = broken;
++        free(ioflag);
++        free(inarray);
++    }
++    return status ? -1 : 0;
++}
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/bc.py solution/pybte/bc.py
+--- environment/pybte/bc.py	2026-09-08 16:38:19.802360120 +0800
++++ solution/pybte/bc.py	2026-09-09 22:12:34.564018998 +0800
+@@ -43,19 +43,42 @@
+     flux_wall: np.ndarray      # (n_faces, ndof_tri) diffuse wall emission
+     has_nonthermalising: bool
+     has_periodic: bool
++    #: (faces, element, local edge) of every diffusely reflecting face, and
++    #: the face mass matrix there; filled on first use
++    wall: tuple | None = None
++
++    def _prepare_wall(self, mesh, int_tri_fc) -> None:
++        faces = np.flatnonzero(
++            (mesh.face_bc >= 0)
++            & (self.bc_type[np.maximum(mesh.face_bc, 0)] == BC_NONTHERMALISING))
++        ft = mesh.face_tri[faces]
++        side = (ft[:, 0] < 0).astype(np.int64)
++        tri = ft[np.arange(faces.size), side]
++        lfc = mesh.face_lfc[faces, side]
++        self.wall = (faces, tri,
++                     -mesh.tri_normal[tri, lfc, 0], -mesh.tri_normal[tri, lfc, 1],
++                     np.ascontiguousarray(int_tri_fc[tri, lfc]))
+ 
+     def update_wall_flux(self, vdf, cxv, cyv, domega, int_tri_fc, mesh) -> None:
+-        """Refresh the adiabatic-wall emission from the current VDF."""
++        """``Calculate_FLUX_WALL``: the isotropic emission that makes the net
++        normal energy flux through a diffusely reflecting wall vanish.
++
++        A boundary-face quadrature over the outgoing half-space, so it is a
++        moment of the distribution like ``T`` or ``q``, linear in ``vdf`` --
++        which is what lets the outer solve carry it in the state vector.
++        """
+         if not self.has_nonthermalising:
+             return
+-        wall_flux_kernel(vdf, cxv, cyv, domega,
+-                         np.ascontiguousarray(int_tri_fc),
+-                         np.ascontiguousarray(mesh.tri_normal[:, :, 0]),
+-                         np.ascontiguousarray(mesh.tri_normal[:, :, 1]),
+-                         mesh.face_bc.astype(np.int32),
+-                         mesh.face_tri.astype(np.int32),
+-                         mesh.face_lfc.astype(np.int32),
+-                         self.bc_type, self.flux_wall)
++        if self.wall is None:
++            self._prepare_wall(mesh, int_tri_fc)
++        faces, tri, n1, n2, fcm = self.wall
++        u = n1[:, None] * cxv[None, :] + n2[:, None] * cyv[None, :]   # (nw, ndir)
++        uw = u * domega[None, :]
++        inflow = u < 0.0
++        emitted = -np.sum(np.where(inflow, 0.0, uw), axis=1)
++        t = np.einsum('jd,djl->jl', np.where(inflow, uw, 0.0), vdf[:, tri, :])
++        self.flux_wall[faces] = -((fcm @ t[:, :, None])[:, :, 0]
++                                  / emitted[:, None])
+ 
+ 
+ def boundary_heat_flux(solver) -> np.ndarray:
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/build_ext.py solution/pybte/build_ext.py
+--- environment/pybte/build_ext.py	1970-01-01 08:00:00.000000000 +0800
++++ solution/pybte/build_ext.py	2026-09-09 22:03:21.396684922 +0800
+@@ -0,0 +1,21 @@
++"""Compile the optional C kernels: ``python -m pybte.build_ext``.
++
++The solver runs without them (numba, then pure numpy), but they remove the
++just-in-time compile/load from the timed part of a run and make the sweep
++about twice as fast.  See :mod:`pybte._ckernels`.
++"""
++from __future__ import annotations
++
++import sys
++
++
++def main(argv=None) -> int:
++    from ._ckernels import build
++
++    path = build(verbose=True)
++    print(f"wrote {path}")
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/config.py solution/pybte/config.py
+--- environment/pybte/config.py	2026-09-08 16:38:19.803932568 +0800
++++ solution/pybte/config.py	2026-09-09 22:06:34.141275443 +0800
+@@ -153,10 +153,11 @@
+     #: iteration.  Costs N_TRIS*NDIR*NDOF^2*8 bytes (128 MB on the shipped
+     #: case); turn it off for large meshes.
+     precompute_inverse: bool = True
+-    #: "numba" -- the jitted sweep; "numpy" -- ``sweep_reference``, which is
+-    #: orders of magnitude slower and exists to pin down what the jitted
+-    #: kernels must reproduce.  Falls back to "numpy" if numba is absent.
+-    kernel: str = "numba"
++    #: "auto" -- the compiled kernel if ``pybte/_bte*.so`` was built, else the
++    #: jitted one, else numpy; "c", "numba", "numpy" to force one (each falls
++    #: back if unavailable).  ``sweep_reference`` ("numpy") is orders of
++    #: magnitude slower and exists to pin down what the others must reproduce.
++    kernel: str = "auto"
+     #: Threads for the jitted sweep.  Directions are independent, so any
+     #: value gives identical results; the default of 0 means "let numba
+     #: decide" (all cores).  Set it to 1 to leave the machine free, or when
+@@ -166,8 +167,9 @@
+     def __post_init__(self):
+         self.precompute_inverse = bool(self.precompute_inverse)
+         self.kernel = str(self.kernel).lower()
+-        if self.kernel not in ("numba", "numpy"):
+-            raise ValueError("performance.kernel must be 'numba' or 'numpy'")
++        if self.kernel not in ("auto", "c", "numba", "numpy"):
++            raise ValueError(
++                "performance.kernel must be 'auto', 'c', 'numba' or 'numpy'")
+         self.threads = int(self.threads)
+         if self.threads < 0:
+             raise ValueError("performance.threads must be >= 0")
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/driver.py solution/pybte/driver.py
+--- environment/pybte/driver.py	2026-09-08 16:38:19.803773568 +0800
++++ solution/pybte/driver.py	2026-09-09 22:28:51.727705477 +0800
+@@ -1,6 +1,6 @@
+-"""The outer iteration -- the port of ``Callaway_2D_2V_DG.f90``.
++"""The outer solve.
+ 
+-::
++The Fortran's outer loop is a stationary iteration::
+ 
+     STEP = 1
+     DO
+@@ -10,10 +10,26 @@
+         EXIT when RESIDUAL < TOL or STEP >= TMAX
+     END DO
+ 
+-Nothing about that structure changes in the port.  What is added around it:
+-an explicit restart contract, an optional true residual, and a
+-:class:`~pybte.io_output.RunRecord` complete enough that a verifier never has
+-to parse stdout.
++which is Richardson iteration on ``y = G y + g`` in the moments that drive
++the scattering source.  Its contraction factor is the physics: it goes to 1
++like ``1 - (pi tau_R)^2/3`` as the medium becomes diffusive and like
++``1 - O(tau_R/tau_N)`` as it becomes hydrodynamic, so on the stiff end of the
++benchmark it needs more iterations than the cap allows -- and, worse, its
++stopping test measures the *step* between iterates, which is small long
++before the *error* is (``RunRecord.error_estimate`` reports the difference).
++
++:meth:`Solver.run` solves the same system instead of iterating it: GMRES on
++``(I - G) y = g``, one transport sweep per matrix-vector product, optionally
++right-preconditioned by the four-direction synthetic-acceleration operator of
++:mod:`pybte.lowres` when the observed convergence says that operator will pay
++for itself.  The fixed point is identical -- same discretisation, same sweep,
++same boundary treatment -- but it is reached in tens of sweeps at every
++``(tau_R, tau_N)`` in the benchmark rather than tens of thousands, and it is
++reached to the residual of the discrete system, not to a stalled step.
++
++:meth:`Solver.step` still performs exactly one Fortran outer iteration, and
++:meth:`Solver.run_source_iteration` still drives the loop above, for anyone
++who needs the historical iterate sequence.
+ """
+ from __future__ import annotations
+ 
+@@ -31,6 +47,8 @@
+ from .io_output import (RunRecord, append_runtime_log, locate_points,
+                         sample_fields, sampling_grid, write_tecplot)
+ from .mesh import build_mesh
++from .krylov import MomentOperator, fgmres
++from .lowres import LowOrderPreconditioner
+ from .moments import Moments, compute_moments, residual_iterate
+ from .ordering import build_sweep_order, validate_sweep_order
+ from .sweep import SweepContext
+@@ -140,7 +158,24 @@
+             self.vdf.reshape(nazim, npole, self.n_tris, self.ndof), (3, 2, 1, 0))
+ 
+     # -- one outer iteration ------------------------------------------------
++    def update_moments(self) -> None:
++        """Moments of the current ``vdf``, and the wall emission it implies.
++
++        The diffuse-wall emission is a moment of the distribution like any
++        other -- ``Calculate_FLUX_WALL`` is a boundary-face quadrature over
++        the outgoing half-space -- so it is refreshed here rather than at the
++        top of the next sweep.  Same value, same iterate sequence; it just
++        makes "the state implied by this distribution" one call.
++        """
++        compute_moments(self.vdf, self.ctx.cxv, self.ctx.cyv, self.ctx.domega,
++                        self.integrals.int_tri, self.case.flow.cv, self.mom)
++        if self.bcdata.has_nonthermalising:
++            self.bcdata.update_wall_flux(self.vdf, self.ctx.cxv, self.ctx.cyv,
++                                         self.ctx.domega,
++                                         self.integrals.int_tri_fc, self.mesh)
++
+     def step(self) -> None:
++        """One Fortran outer iteration: sweep, then moments."""
+         if self.bcdata.has_nonthermalising:
+             self.bcdata.update_wall_flux(self.vdf, self.ctx.cxv, self.ctx.cyv,
+                                          self.ctx.domega,
+@@ -151,8 +186,129 @@
+         compute_moments(self.vdf, self.ctx.cxv, self.ctx.cyv, self.ctx.domega,
+                         self.integrals.int_tri, self.case.flow.cv, self.mom)
+ 
+-    # -- the outer loop -----------------------------------------------------
+-    def run(self, callback=None, progress_every: int = 0) -> RunRecord:
++    # -- the outer solve ----------------------------------------------------
++    #: GMRES target for ``||(I - G) y - g|| / ||g||``.  Four orders of
++    #: magnitude tighter than anything the temperature field can resolve,
++    #: because it costs one or two extra sweeps to be sure rather than close.
++    KRYLOV_TOL = 1.0e-13
++    #: below this the answer is converged for every purpose; used to accept a
++    #: solve that has stopped improving before reaching ``KRYLOV_TOL``
++    KRYLOV_FLOOR = 1.0e-10
++    #: first iteration at which the convergence rate is extrapolated to decide
++    #: whether the synthetic-acceleration operator is worth building
++    PRECOND_PROBE = 6
++    #: build it if more than this many further sweeps would be needed without
++    PRECOND_BREAKEVEN = 30
++    #: rebuild with a richer angular set if, that many sweeps after building
++    #: it, the preconditioned rate still implies more than this many to go
++    ESCALATE_BREAKEVEN = 60
++
++    def run(self, callback=None, progress_every: int = 0,
++            precondition: bool | None = None) -> RunRecord:
++        """Solve ``(I - G) y = g`` by GMRES, one sweep per matrix-vector product.
++
++        ``precondition`` forces the four-direction synthetic-acceleration
++        preconditioner on or off; the default decides from the observed
++        convergence rate, at iteration ``PRECOND_PROBE``, whether building it
++        will pay for itself.
++        """
++        c = self.case
++        t0 = time.perf_counter()
++        op = MomentOperator(self)
++        self._last_operator = op
++
++        y0 = None
++        if self.restart_info.get("enabled"):
++            self.update_moments()
++            y0 = op.pack()
++
++        g = op.rhs()
++        maxiter = max(1, min(int(c.iteration.tmax) - 2, 600))
++
++        pc_state = {"pc": None, "built": False, "ndir": 0, "built_at": -1,
++                    "res_at_build": 1.0, "escalated": False, "hist": []}
++
++        def build_precond(ndir=None):
++            pc_state["built"] = True
++            try:
++                pc_state["pc"] = LowOrderPreconditioner(self, op, ndir=ndir)
++                pc_state["ndir"] = pc_state["pc"].ncd
++            except Exception as exc:            # pragma: no cover - defensive
++                warnings.warn(f"synthetic acceleration unavailable ({exc}); "
++                              "continuing unpreconditioned")
++                pc_state["pc"] = None
++            return pc_state["pc"]
++
++        if precondition:
++            build_precond()
++
++        def remaining(j0, r0, j, res):
++            """Sweeps still needed at the rate observed since ``(j0, r0)``."""
++            k = j - j0
++            if k <= 0 or r0 <= 0.0 or res <= 0.0:
++                return np.inf
++            rho = (res / r0) ** (1.0 / k)
++            if rho >= 1.0:
++                return np.inf
++            return float(np.log(self.KRYLOV_TOL / res) / np.log(rho))
++
++        def hook(j, res):
++            pc_state["hist"].append(res)
++            if precondition is False or res <= self.KRYLOV_TOL:
++                return None
++            if not pc_state["built"]:
++                # extrapolate the observed contraction: if the unpreconditioned
++                # solve is going to cost more sweeps than the low-order operator
++                # costs to build and use, build it
++                if j < self.PRECOND_PROBE:
++                    return None
++                if remaining(0, pc_state["hist"][0], j, res) > self.PRECOND_BREAKEVEN:
++                    pc_state["built_at"] = j
++                    pc_state["res_at_build"] = res
++                    return build_precond()
++                return None
++            # ... and if the low-order model turns out to be a poor one, pay
++            # for a richer angular set rather than iterate on a bad guess
++            if (pc_state["pc"] is None or pc_state["escalated"]
++                    or j < pc_state["built_at"] + 2 * self.PRECOND_PROBE):
++                return None
++            if remaining(pc_state["built_at"], pc_state["res_at_build"], j,
++                         res) > self.ESCALATE_BREAKEVEN:
++                pc_state["escalated"] = True
++                return build_precond(ndir=pc_state["ndir"] + 2)
++            return None
++
++        y, res, iters, hist = fgmres(
++            op.matvec, g, tol=self.KRYLOV_TOL, maxiter=maxiter, x0=y0,
++            precond=pc_state["pc"], hook=hook,
++            stall_floor=self.KRYLOV_FLOOR)
++
++        # the distribution that goes with the converged moments
++        op.realise(y)
++        converged = bool(res <= self.KRYLOV_FLOOR)
++        wall = time.perf_counter() - t0
++
++        residuals = np.asarray(hist)
++        masses = np.asarray(op.masses if op.masses else [float(self.mom.temp.sum())])
++        self.t_old[:] = self.mom.temp
++        rec = self._record(op.sweeps, converged, residuals, masses, None, wall,
++                           scheme="GMRES",
++                           extra={"krylov_iterations": int(iters),
++                                  "krylov_residual": float(res),
++                                  "preconditioner": ("lowres-S4"
++                                                     if pc_state["pc"] is not None
++                                                     else "none"),
++                                  "moment_unknowns": int(op.n)})
++        if progress_every:
++            print(f"  GMRES {iters} iterations, {op.sweeps} sweeps, "
++                  f"relative residual {res:.3e}", flush=True)
++        if callback is not None:
++            callback(op.sweeps, res, self)
++        return rec
++
++    # -- the historical outer loop ------------------------------------------
++    def run_source_iteration(self, callback=None,
++                             progress_every: int = 0) -> RunRecord:
+         """Source iteration: ``Calculate_Residual_T < tol``, as the Fortran."""
+         c = self.case
+         tol, tmax = c.iteration.tol, c.iteration.tmax
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/integration.py solution/pybte/integration.py
+--- environment/pybte/integration.py	2026-09-05 12:17:48.504734452 +0800
++++ solution/pybte/integration.py	2026-09-09 21:29:08.274921212 +0800
+@@ -79,6 +79,7 @@
+ def _powf(x, e):
+     """``x ** float(e)`` with the Fortran's libm semantics."""
+     import math
++    from itertools import repeat
+ 
+     if not EXACT_POW:
+         return np.power(x, float(e))
+@@ -88,7 +89,7 @@
+     if e == 1:
+         return x.copy()
+     flat = x.ravel()
+-    out = np.fromiter((math.pow(v, float(e)) for v in flat),
++    out = np.fromiter(map(math.pow, flat, repeat(float(e))),
+                       dtype=np.float64, count=flat.size)
+     return out.reshape(x.shape)
+ 
+@@ -99,12 +100,24 @@
+     Accumulated in the Fortran's order (ascending monomial index, product
+     associated as ``(c * xi**a) * eta**b``) rather than as a BLAS dot, so the
+     result is bit-identical rather than merely equal to rounding.
++
++    Each distinct exponent is raised once and reused: ``_powf`` is a
++    Python-level loop over libm ``pow`` and the monomial table repeats
++    exponents heavily (``deg`` distinct values for a basis of
++    ``(deg+1)(deg+2)/2`` monomials).  Caching is what makes the vectorised
++    face assembly below affordable; the arithmetic is unchanged.
+     """
+     shape = np.broadcast(xi, eta).shape
+     out = np.zeros(shape + (nodfun.shape[0],))
++    xcache: dict = {}
++    ycache: dict = {}
+     for k, (a, b) in enumerate(mono):
+-        xa = _powf(xi, a)
+-        yb = _powf(eta, b)
++        xa = xcache.get(a)
++        if xa is None:
++            xa = xcache[a] = _powf(xi, a)
++        yb = ycache.get(b)
++        if yb is None:
++            yb = ycache[b] = _powf(eta, b)
+         out += (nodfun[:, k] * xa[..., None]) * yb[..., None]
+     return out
+ 
+@@ -309,7 +322,20 @@
+         weig = n2 * n2 * (length[:, None] - 0.0) / ((1.0 - yq * yq) * lpq * lpq) / n1 / n1
+         return absc, weig
+ 
++    # -- INT_NODFUNC_TRI_FC_FC and INT_NODFUNC_TRI_TRI_FC ------------------
++    # Both are face-quadrature tensors over the same points, so the element
++    # trace ``pm`` is evaluated once and used twice.  Vectorised over
++    # elements; the three local edges stay an outer loop so that every array
++    # is (n_tris, np_fc, ...) and the accumulation order over quadrature
++    # points is the Fortran's.
++    bc_codes = np.asarray(bc_codes) if bc_codes is not None else np.zeros(0, dtype=int)
++    bc_xoff = np.asarray(bc_xoff) if bc_xoff is not None else np.zeros(0)
++    bc_yoff = np.asarray(bc_yoff) if bc_yoff is not None else np.zeros(0)
++
+     int_tri_fc_fc = np.zeros((ndof_tri, ndof_fc, n_tris, 3))
++    int_tri_tri_fc = np.zeros((n_tris, 3, ndof_tri, ndof_tri))
++    tri_ids = np.arange(n_tris)
++    (bA, cA, dA), (fE, gE, hE) = _affine_to_reference(x, y)
+     for j2 in range(3):
+         fcid = mesh.tri_faces[:, j2]
+         ln = mesh.face_len[fcid]
+@@ -322,73 +348,57 @@
+         xp = (fx2 - fx1) / lnc * absc + fx1
+         yp = (fy2 - fy1) / lnc * absc + fy1
+ 
+-        (bA, cA, dA), (fE, gE, hE) = _affine_to_reference(x, y)
+         xi = bA[:, None] * xp + cA[:, None] * yp + dA[:, None]
+         eta = fE[:, None] * xp + gE[:, None] * yp + hE[:, None]
+         pm = _eval_mono(C, mono, xi, eta)             # (n_tris, np_fc, ndof_tri)
+ 
++        # --- element x face basis
+         t = 2.0 * absc / lnc - 1.0
+-        pl = np.zeros(t.shape + (ndof_fc,))           # (n_tris, np_fc, ndof_fc)
++        pf = np.zeros(t.shape + (ndof_fc,))           # (n_tris, np_fc, ndof_fc)
+         for k in range(ndof_fc):
+-            pl += Cf[:, k] * _powf(t, k)[..., None]
++            pf += Cf[:, k] * _powf(t, k)[..., None]
+ 
+-        # accumulate over quadrature points in the Fortran's order
+-        acc = np.zeros((n_tris, ndof_tri, ndof_fc))
++        # --- element x neighbour basis: the far side of the edge, and the
++        # offset that maps this edge onto its periodic partner
++        bc = mesh.face_bc[fcid]
++        interior = bc < 0
++        if bc_codes.size:
++            periodic = (bc >= 0) & (bc_codes[np.maximum(bc, 0)] == BC_PERIODIC)
++        else:
++            periodic = np.zeros(n_tris, dtype=bool)
++        coupled = interior | periodic
++
++        ft = mesh.face_tri[fcid]
++        other = np.where(ft[:, 0] == tri_ids, ft[:, 1], ft[:, 0])
++        ox = np.zeros(n_tris)
++        oy = np.zeros(n_tris)
++        if np.any(periodic):
++            idx = np.flatnonzero(periodic)
++            pair = mesh.face_pair[fcid[idx]]
++            pt = mesh.face_tri[pair]
++            other[idx] = np.where(pt[:, 0] < 0, pt[:, 1], pt[:, 0])
++            bc_p = mesh.face_bc[pair]
++            ox[idx] = bc_xoff[bc_p]
++            oy[idx] = bc_yoff[bc_p]
++        safe = np.where(coupled, other, 0)
++        xo = nodes[mesh.tri_nodes[safe], 0] + ox[:, None]
++        yo = nodes[mesh.tri_nodes[safe], 1] + oy[:, None]
++        (bA2, cA2, dA2), (fE2, gE2, hE2) = _affine_to_reference(xo, yo)
++        pl = _eval_mono(C, mono, bA2[:, None] * xp + cA2[:, None] * yp + dA2[:, None],
++                        fE2[:, None] * xp + gE2[:, None] * yp + hE2[:, None])
++
++        # --- accumulate over quadrature points in the Fortran's order
++        accf = np.zeros((n_tris, ndof_tri, ndof_fc))
++        acc = np.zeros((n_tris, ndof_tri, ndof_tri))
++        accb = np.zeros((n_tris, ndof_tri))
+         for q in range(np_fc):
+-            acc += (pm[:, q, :, None] * pl[:, q, None, :]) * weig[:, q, None, None]
+-        int_tri_fc_fc[:, :, :, j2] = np.transpose(acc, (1, 2, 0))
+-
+-    # -- INT_NODFUNC_TRI_TRI_FC --------------------------------------------
+-    bc_codes = np.asarray(bc_codes) if bc_codes is not None else np.zeros(0, dtype=int)
+-    bc_xoff = np.asarray(bc_xoff) if bc_xoff is not None else np.zeros(0)
+-    bc_yoff = np.asarray(bc_yoff) if bc_yoff is not None else np.zeros(0)
+-
+-    int_tri_tri_fc = np.zeros((n_tris, 3, ndof_tri, ndof_tri))
+-    for i in range(n_tris):
+-        for j2 in range(3):
+-            fcid = int(mesh.tri_faces[i, j2])
+-            bc = int(mesh.face_bc[fcid])
+-            ln = float(mesh.face_len[fcid])
+-            fx1 = nodes[mesh.face_nodes[fcid, 0], 0]
+-            fy1 = nodes[mesh.face_nodes[fcid, 0], 1]
+-            fx2 = nodes[mesh.face_nodes[fcid, 1], 0]
+-            fy2 = nodes[mesh.face_nodes[fcid, 1], 1]
+-            absc, weig = face_rule(np.array([ln]))
+-            absc = absc[0]
+-            weig = weig[0]
+-            xp = (fx2 - fx1) / ln * absc + fx1
+-            yp = (fy2 - fy1) / ln * absc + fy1
+-
+-            xs = nodes[mesh.tri_nodes[i], 0]
+-            ys = nodes[mesh.tri_nodes[i], 1]
+-            (bA, cA, dA), (fE, gE, hE) = _affine_to_reference(xs, ys)
+-            pm = _eval_mono(C, mono, bA * xp + cA * yp + dA, fE * xp + gE * yp + hE)
+-
+-            periodic = bc >= 0 and bc_codes.size and bc_codes[bc] == BC_PERIODIC
+-            if bc < 0 or periodic:
+-                if bc < 0:
+-                    t1, t2 = mesh.face_tri[fcid]
+-                    other = t2 if t1 == i else t1
+-                    ox = oy = 0.0
+-                else:
+-                    pair = int(mesh.face_pair[fcid])
+-                    bc_p = int(mesh.face_bc[pair])
+-                    other, _ = mesh.adjacent(pair)
+-                    ox, oy = float(bc_xoff[bc_p]), float(bc_yoff[bc_p])
+-                xo = nodes[mesh.tri_nodes[other], 0] + ox
+-                yo = nodes[mesh.tri_nodes[other], 1] + oy
+-                (bA2, cA2, dA2), (fE2, gE2, hE2) = _affine_to_reference(xo, yo)
+-                pl = _eval_mono(C, mono, bA2 * xp + cA2 * yp + dA2,
+-                                fE2 * xp + gE2 * yp + hE2)
+-                acc = np.zeros((ndof_tri, ndof_tri))
+-                for q in range(np_fc):
+-                    acc += (pm[q][:, None] * pl[q][None, :]) * weig[q]
+-                int_tri_tri_fc[i, j2] = acc
+-            else:
+-                acc = np.zeros(ndof_tri)
+-                for q in range(np_fc):
+-                    acc += pm[q] * weig[q]
+-                int_tri_tri_fc[i, j2] = acc[:, None]
++            w = weig[:, q, None, None]
++            accf += (pm[:, q, :, None] * pf[:, q, None, :]) * w
++            acc += (pm[:, q, :, None] * pl[:, q, None, :]) * w
++            accb += pm[:, q, :] * weig[:, q, None]
++        int_tri_fc_fc[:, :, :, j2] = np.transpose(accf, (1, 2, 0))
++        int_tri_tri_fc[:, j2] = np.where(coupled[:, None, None], acc,
++                                         accb[:, :, None])
+ 
+     # -- element quadrature ------------------------------------------------
+     qax, qay, qw = tri_quadrature(np_tri)
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/krylov.py solution/pybte/krylov.py
+--- environment/pybte/krylov.py	1970-01-01 08:00:00.000000000 +0800
++++ solution/pybte/krylov.py	2026-09-09 21:39:39.987327554 +0800
+@@ -0,0 +1,239 @@
++"""The outer solve, as a linear system in the scattering source.
++
++Source iteration is a stationary Richardson iteration on a linear fixed point,
++and that is the whole reason it is slow: the map it iterates,
++
++    y  ->  D T^{-1} (S y + b) ,
++
++has a spectral radius that goes to 1 as the medium becomes optically thick
++(``rho ~ 1 - (pi tau_R)^2/3`` in the diffusive limit, ``1 - O(tau_R/tau_N)``
++in the hydrodynamic one).  Nothing about the *answer* is hard: the fixed
++point is the solution of a small, well-defined linear system
++
++    (I - G) y = g ,       G = D T^{-1} S ,   g = D T^{-1} b ,
++
++in the moments that drive the scattering source -- ``3 * NDOF_TRI * N_TRIS``
++unknowns plus one per diffuse-wall face DOF, a few thousand in total, against
++the ``NDIR * N_TRIS * NDOF_TRI`` unknowns of the distribution itself.  One
++application of ``G`` costs exactly one transport sweep, the same currency
++source iteration spends, so any Krylov method on this system is strictly
++better value per sweep than the fixed-point iteration.
++
++This module carries
++
++``MomentState``    the packing of ``(T, qx, qy)`` moments and the diffuse-wall
++                   emission into one vector, with the scaling that puts every
++                   component in the units of the scattering source it feeds;
++``MomentOperator`` ``y -> (I - G) y`` and the right-hand side ``g``, each one
++                   sweep, plus ``realise`` which turns a converged ``y`` back
++                   into the distribution it corresponds to;
++``fgmres``         flexible GMRES, so that the preconditioner may be built
++                   *during* the solve (see :mod:`pybte.lowres`) without
++                   discarding the Krylov space already built.
++
++The fixed point is unchanged by any of this: at convergence ``vdf`` satisfies
++the same discrete transport system, to a residual limited by the Krylov
++tolerance rather than by the contraction factor.
++"""
++from __future__ import annotations
++
++import numpy as np
++
++from .constants import BC_NONTHERMALISING, PI
++
++__all__ = ["MomentOperator", "fgmres"]
++
++
++class MomentOperator:
++    """``(I - G) y`` and ``g``, in the scaled moment coordinates.
++
++    The state carries, per element and DOF, the three fields that enter the
++    scattering source
++
++        a = Cv T (1/tau_R + 1/tau_N) / 4pi ,
++        b = 3 qx / (4pi Vg^2 tau_N) ,
++        c = 3 qy / (4pi Vg^2 tau_N) ,
++
++    so that ``A_SRC(m) = sum_l INT_TRI_TRI(l,m,i) (a + cx b + cy c)(l,i)``
++    with no further coefficients, followed by the diffuse-wall emission on
++    the faces that have one.  Scaling the moments this way (rather than
++    carrying ``T``, ``qx``, ``qy`` raw) keeps the three blocks the same size
++    when ``tau_N`` is 1e5 times ``tau_R``, which is what a Krylov method
++    needs to see a single well-scaled operator instead of three.
++    """
++
++    def __init__(self, solver):
++        self.s = solver
++        c = solver.case
++        cv, vg = c.flow.cv, c.flow.vg
++        self.cv = cv
++        self.alpha = cv * (1.0 / c.flow.tau_r + 1.0 / c.flow.tau_n) / (4.0 * PI)
++        self.beta = 3.0 / (4.0 * PI * vg * vg * c.flow.tau_n)
++        self.nd = solver.ndof
++        self.nt = solver.n_tris
++        self.k = self.nd * self.nt
++
++        bd = solver.bcdata
++        mesh = solver.mesh
++        if bd.has_nonthermalising:
++            wall_bc = np.flatnonzero(bd.bc_type == BC_NONTHERMALISING)
++            self.fw_faces = np.flatnonzero(np.isin(mesh.face_bc, wall_bc))
++        else:
++            self.fw_faces = np.zeros(0, dtype=np.int64)
++        self.n_fw = int(self.fw_faces.size)
++        self.n = 3 * self.k + self.n_fw * self.nd
++        self.sweeps = 0
++        self.masses: list[float] = []
++
++    # -- packing -----------------------------------------------------------
++    def pack(self, out=None) -> np.ndarray:
++        """Read the solver's current moments into a state vector."""
++        s = self.s
++        y = np.empty(self.n) if out is None else out
++        k = self.k
++        np.multiply(s.mom.ts, self.alpha, out=y[0:k].reshape(self.nd, self.nt))
++        np.multiply(s.mom.qxs, self.beta, out=y[k:2 * k].reshape(self.nd, self.nt))
++        np.multiply(s.mom.qys, self.beta, out=y[2 * k:3 * k].reshape(self.nd, self.nt))
++        if self.n_fw:
++            np.multiply(s.bcdata.flux_wall[self.fw_faces], self.alpha,
++                        out=y[3 * k:].reshape(self.n_fw, self.nd))
++        return y
++
++    def unpack(self, y: np.ndarray) -> None:
++        """Write a state vector back into the solver's moment arrays."""
++        s = self.s
++        k = self.k
++        np.multiply(y[0:k].reshape(self.nd, self.nt), 1.0 / self.alpha, out=s.mom.ts)
++        np.multiply(y[k:2 * k].reshape(self.nd, self.nt), 1.0 / self.beta, out=s.mom.qxs)
++        np.multiply(y[2 * k:3 * k].reshape(self.nd, self.nt), 1.0 / self.beta,
++                    out=s.mom.qys)
++        if self.n_fw:
++            s.bcdata.flux_wall[self.fw_faces] = (y[3 * k:].reshape(self.n_fw, self.nd)
++                                                 / self.alpha)
++
++    # -- the map -----------------------------------------------------------
++    def _apply(self, y, with_bc: bool, out=None) -> np.ndarray:
++        """``D T^{-1} (S y [+ b])`` -- one transport sweep."""
++        s = self.s
++        self.unpack(y)
++        s.ctx.sweep(s.mom, s.vdf, with_bc=with_bc)
++        self.sweeps += 1
++        s.update_moments()
++        self.masses.append(float(np.sum(s.mom.temp)))
++        return self.pack(out)
++
++    def rhs(self) -> np.ndarray:
++        """``g = D T^{-1} b``: the sweep driven by the wall sources alone."""
++        return self._apply(np.zeros(self.n), True)
++
++    def matvec(self, y: np.ndarray) -> np.ndarray:
++        out = self._apply(y, False)
++        np.subtract(y, out, out=out)
++        return out
++
++    def realise(self, y: np.ndarray) -> None:
++        """Leave the solver holding the distribution that ``y`` describes.
++
++        One last sweep, with the wall sources in: ``vdf`` then satisfies
++        ``A_SOL f = A_SRC(y)`` element by element and direction by direction,
++        and the moments are recomputed from that ``f`` so that what the run
++        record reports and what ``solver.vdf`` contains are the same state.
++        """
++        s = self.s
++        self.unpack(y)
++        s.ctx.sweep(s.mom, s.vdf, with_bc=True)
++        self.sweeps += 1
++        s.update_moments()
++        self.masses.append(float(np.sum(s.mom.temp)))
++
++
++# ---------------------------------------------------------------------------
++def fgmres(matvec, b, tol=1.0e-12, maxiter=200, x0=None, precond=None,
++           hook=None, stall_floor=1.0e-9, stall_ratio=0.8):
++    """Flexible GMRES with right preconditioning.
++
++    Flexible because the preconditioner is allowed to change from one
++    iteration to the next: ``hook(j, res)`` may return a new preconditioner
++    (or ``None`` to keep the current one), which lets the driver decide *from
++    the observed convergence* whether the synthetic-acceleration operator is
++    worth building, without throwing away the Krylov space built so far.
++
++    Returns ``(x, res, iters, history)`` with ``res`` the true relative
++    residual ``||b - A x|| / ||b||``.
++    """
++    n = b.size
++    bnorm = float(np.linalg.norm(b))
++    if bnorm == 0.0:
++        return np.zeros(n), 0.0, 0, [0.0]
++
++    x = np.zeros(n) if x0 is None else np.array(x0, dtype=float)
++    r = b - matvec(x) if x0 is not None else b.copy()
++    beta = float(np.linalg.norm(r))
++    if beta / bnorm <= tol:
++        return x, beta / bnorm, 0, [beta / bnorm]
++
++    V = np.empty((maxiter + 1, n))
++    Z = np.empty((maxiter, n))
++    H = np.zeros((maxiter + 1, maxiter))
++    cs = np.zeros(maxiter)
++    sn = np.zeros(maxiter)
++    g = np.zeros(maxiter + 1)
++
++    V[0] = r / beta
++    g[0] = beta
++    history = [beta / bnorm]
++    res = beta / bnorm
++    j = 0
++    for j in range(maxiter):
++        if hook is not None:
++            new = hook(j, res)
++            if new is not None:
++                precond = new
++        Z[j] = V[j] if precond is None else precond(V[j])
++        w = matvec(Z[j])
++
++        # classical Gram-Schmidt, twice: BLAS-2 and as stable as modified GS
++        Vj = V[:j + 1]
++        h = Vj @ w
++        w -= h @ Vj
++        h2 = Vj @ w
++        w -= h2 @ Vj
++        h += h2
++        H[:j + 1, j] = h
++        hnext = float(np.linalg.norm(w))
++        H[j + 1, j] = hnext
++
++        for i in range(j):
++            t = cs[i] * H[i, j] + sn[i] * H[i + 1, j]
++            H[i + 1, j] = -sn[i] * H[i, j] + cs[i] * H[i + 1, j]
++            H[i, j] = t
++        d = float(np.hypot(H[j, j], hnext))
++        if d == 0.0:
++            j += 1
++            break
++        cs[j] = H[j, j] / d
++        sn[j] = hnext / d
++        H[j, j] = d
++        H[j + 1, j] = 0.0
++        g[j + 1] = -sn[j] * g[j]
++        g[j] = cs[j] * g[j]
++
++        res = abs(g[j + 1]) / bnorm
++        history.append(res)
++        if res <= tol or hnext == 0.0:
++            j += 1
++            break
++        # a Krylov solve that has stopped making progress well below the
++        # accuracy anyone can use is finished, whatever the target says
++        if (res < stall_floor and len(history) > 3
++                and res > stall_ratio * history[-4]):
++            j += 1
++            break
++        V[j + 1] = w / hnext
++    else:
++        j = maxiter
++
++    if j > 0:
++        yy = np.linalg.solve(np.triu(H[:j, :j]), g[:j])
++        x += yy @ Z[:j]
++    return x, res, j, history
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/lowres.py solution/pybte/lowres.py
+--- environment/pybte/lowres.py	1970-01-01 08:00:00.000000000 +0800
++++ solution/pybte/lowres.py	2026-09-09 22:28:51.735540419 +0800
+@@ -0,0 +1,236 @@
++"""Synthetic acceleration: the same transport problem on a handful of directions.
++
++What makes source iteration slow is not the transport sweep, it is the
++scattering: one sweep moves information one mean free path, and in a
++diffusive or hydrodynamic medium the answer is many mean free paths away.
++The classical cure is to correct the moments with a cheap *low-order* model
++of the same physics -- diffusion synthetic acceleration, and its relatives.
++
++Here the low-order model is the discrete transport problem itself -- same
++mesh, same DG space, same boundary treatment, same two relaxation channels --
++with the angular quadrature collapsed onto ``n`` in-plane directions,
++
++    c_k = Vg sqrt(2/3) (cos t_k, sin t_k),   w_k = 4pi/n,
++
++equally spaced.  For any ``n >= 3`` that set has the exact moments the
++scattering operator contracts against (``sum w = 4pi``, ``sum w c = 0``,
++``sum w c_i c_j = (4pi Vg^2/3) delta_ij``), so the low-order model inherits
++the diffusion limit of the fine one -- it is a P1 closure in disguise -- and,
++because the momentum-conserving normal channel is kept in full, the
++hydrodynamic limit too.  Nothing has to be derived by hand for either regime:
++one assembly serves both.
++
++With so few directions the coupled system
++
++    K g = (T_L - S_L D_L) g = S_L r ,      M^{-1} r = r + D_L g
++
++is small enough to factorise directly, once per run, and ``M^{-1}`` is a good
++enough stand-in for ``(I - G)^{-1}`` to take GMRES from several hundred
++sweeps to a dozen.
++
++**How many directions.**  Three is the cheapest set that fixes the diffusive
++end, and the factorisation is the dominant cost, so three is where to start.
++Such a set cannot, however, carry a deviatoric stress -- fewer than five
++equally spaced directions have degenerate fourth angular moments -- so the
++low-order momentum equation has no viscosity.  That is invisible while
++resistive scattering dominates and dominant once normal scattering does
++(``tau_N << tau_R``), where the flow is Poiseuille-like and viscous.
++:func:`preconditioner_directions` starts one direction richer in that
++regime, and :meth:`pybte.driver.Solver.run` escalates further if the rate it
++observes says the model is too crude.  Either way this is only a
++preconditioner: a poor choice costs iterations, never accuracy.
++"""
++from __future__ import annotations
++
++import numpy as np
++import scipy.sparse as sp
++import scipy.sparse.linalg as spla
++
++from .constants import BC_NONTHERMALISING, BC_PERIODIC, PI
++
++__all__ = ["LowOrderPreconditioner", "coarse_directions",
++           "preconditioner_directions"]
++
++
++def coarse_directions(vg: float, n: int = 4, offset: float = 0.25):
++    """``n`` in-plane directions with the exact zeroth and second moments.
++
++    Equally spaced at ``|c| = Vg sqrt(2/3)`` with weight ``4pi/n``, which for
++    every ``n >= 3`` gives ``sum w = 4pi``, ``sum w c = 0`` and
++    ``sum w c_i c_j = (4pi Vg^2/3) delta_ij``.  ``offset`` rotates the set by
++    that fraction of the spacing, which for ``n = 4`` puts it on the
++    diagonals rather than along the axes.
++    """
++    if n < 3:
++        raise ValueError("need at least three coarse directions in 2D")
++    ang = (np.arange(n) + offset) * (2.0 * PI / n)
++    c = vg * np.sqrt(2.0 / 3.0)
++    return c * np.cos(ang), c * np.sin(ang), np.full(n, 4.0 * PI / n)
++
++
++def preconditioner_directions(case) -> int:
++    """How many low-order directions this case needs.
++
++    Four once normal scattering clearly outweighs resistive scattering,
++    three otherwise; see the module docstring.  The driver escalates by two
++    if the rate it then observes says the model was too crude, so this is a
++    starting guess, not a commitment -- and only the iteration count depends
++    on it either way.
++    """
++    return 4 if case.flow.tau_r > 4.0 * case.flow.tau_n else 3
++
++
++class LowOrderPreconditioner:
++    """``r -> r + D_L (T_L - S_L D_L)^{-1} S_L r``."""
++
++    def __init__(self, solver, op, ndir: int | None = None):
++        self.op = op
++        s = solver
++        c = s.case
++        nd = self.nd = s.ndof
++        nt = self.nt = s.n_tris
++        if ndir is None:
++            ndir = preconditioner_directions(c)
++        cx, cy, wq = coarse_directions(c.flow.vg, ndir)
++        self.cx, self.cy, self.wq = cx, cy, wq
++        ncd = self.ncd = cx.size
++        B = self.B = ncd * nd
++        self.cv = c.flow.cv
++        self.alpha = op.alpha
++        self.beta = op.beta
++
++        I = s.integrals
++        mesh = s.mesh
++        # INT_NODFUNC_TRI_TRI as (i, m, l) and as (i, l, m): the operator
++        # indexes the first, the scattering source the second
++        masst = np.ascontiguousarray(np.transpose(I.int_tri_tri, (2, 0, 1)))
++        self.mlm = np.ascontiguousarray(np.transpose(masst, (0, 2, 1)))
++        fcm = I.int_tri_fc
++        ttfc = I.int_tri_tri_fc
++        inv_tc = 1.0 / c.tau_c
++        bc_type = s.bcdata.bc_type
++        tri_faces = mesh.tri_faces
++
++        speed = (cx * mesh.tri_normal[:, :, 0, None]
++                 + cy * mesh.tri_normal[:, :, 1, None])        # (i, il, d)
++        wp = np.maximum(speed, 0.0)
++        wm = np.minimum(speed, 0.0)
++
++        # ---- element-diagonal block: transport + scattering ---------------
++        blocks = np.zeros((nt, B, B))
++        for d in range(ncd):
++            blk = (inv_tc * masst - cx[d] * I.int_tri_tri_x - cy[d] * I.int_tri_tri_y
++                   + np.einsum('ij,ijml->iml', wp[:, :, d], fcm))
++            blocks[:, d * nd:(d + 1) * nd, d * nd:(d + 1) * nd] += blk
++        coup = (self.alpha / self.cv
++                + self.beta * (cx[:, None] * cx[None, :] + cy[:, None] * cy[None, :]))
++        for d in range(ncd):
++            for dp in range(ncd):
++                blocks[:, d * nd:(d + 1) * nd, dp * nd:(dp + 1) * nd] -= (
++                    self.mlm * (wq[dp] * coup[d, dp]))
++
++        # ---- off-diagonal blocks: upwind inflow from the neighbour --------
++        rows = []
++        cols = []
++        vals = []
++        dofs = np.arange(nd)
++        dirs = np.arange(ncd)
++        wall_slot: list[int] = []
++        wall_tri: list[int] = []
++        wall_lfc: list[int] = []
++        wall_emit: list[np.ndarray] = []
++        for il in range(3):
++            fc = tri_faces[:, il]
++            bcf = mesh.face_bc[fc]
++            typ = np.where(bcf >= 0, bc_type[np.maximum(bcf, 0)], -1)
++            interior = bcf < 0
++            other = np.where(interior, mesh.tri_neighbour[:, il],
++                             s.bcdata.periodic_tri[fc])
++            sel = np.flatnonzero(interior | (typ == BC_PERIODIC))
++            if sel.size:
++                blk = wm[sel, il, :, None, None] * ttfc[sel, il][:, None]
++                base_r = (sel[:, None, None, None] * B
++                          + dirs[None, :, None, None] * nd + dofs[None, None, :, None])
++                base_c = (other[sel][:, None, None, None] * B
++                          + dirs[None, :, None, None] * nd + dofs[None, None, None, :])
++                rows.append(np.broadcast_to(base_r, blk.shape).ravel())
++                cols.append(np.broadcast_to(base_c, blk.shape).ravel())
++                vals.append(blk.ravel())
++
++            # ---- diffuse walls: what leaves the element comes back in -----
++            for i in np.flatnonzero(typ == BC_NONTHERMALISING):
++                out = speed[i, il] > 0.0            # leaves through this face
++                inn = ~out
++                ss2 = float(np.sum(speed[i, il][inn] * wq[inn]))
++                if ss2 == 0.0:                      # pragma: no cover
++                    continue
++                emit = np.zeros(ncd)
++                emit[out] = (speed[i, il][out] * wq[out]) / ss2
++                wall_slot.append(int(np.searchsorted(op.fw_faces, tri_faces[i, il])))
++                wall_tri.append(int(i))
++                wall_lfc.append(il)
++                wall_emit.append(emit)
++                for d in np.flatnonzero(inn):
++                    for dp in np.flatnonzero(out):
++                        blocks[i, d * nd:(d + 1) * nd, dp * nd:(dp + 1) * nd] -= (
++                            (speed[i, il, d] * emit[dp]) * fcm[i, il])
++
++        r0 = (np.arange(nt)[:, None, None] * B + np.arange(B)[None, :, None])
++        c0 = (np.arange(nt)[:, None, None] * B + np.arange(B)[None, None, :])
++        rows.append(np.broadcast_to(r0, blocks.shape).ravel())
++        cols.append(np.broadcast_to(c0, blocks.shape).ravel())
++        vals.append(blocks.ravel())
++
++        n = nt * B
++        K = sp.csc_matrix((np.concatenate(vals),
++                           (np.concatenate(rows), np.concatenate(cols))), shape=(n, n))
++        # Static pivoting: the operator is diagonally dominant by construction
++        # (the collision term carries 1/tau_C) and this is a preconditioner,
++        # so trading a few digits of the factorisation for a third of the fill
++        # is free.
++        self.lu = spla.splu(K, permc_spec="MMD_AT_PLUS_A", diag_pivot_thresh=0.0)
++        self.K = K
++
++        # ---- pre-assembled pieces of the application ----------------------
++        lfc = np.array(wall_lfc, dtype=np.int64)
++        self.wall_slot = np.array(wall_slot, dtype=np.int64)
++        self.wall_tri = np.array(wall_tri, dtype=np.int64)
++        self.wall_emit = (np.array(wall_emit).reshape(-1, ncd) if wall_emit
++                          else np.zeros((0, ncd)))
++        self.wall_wm = (wm[self.wall_tri, lfc] if wall_slot
++                        else np.zeros((0, ncd)))
++        self.wall_fcm = (fcm[self.wall_tri, lfc] if wall_slot
++                         else np.zeros((0, nd, nd)))
++        #: (3, ncd) -- the moments the low-order solution feeds back
++        self.dmat = np.array([wq * self.alpha / self.cv, wq * cx * self.beta,
++                              wq * cy * self.beta])
++        #: (3, ncd) -- how the three source fields enter each direction
++        self.smat = np.array([np.ones(ncd), cx, cy])
++
++    # -- application -------------------------------------------------------
++    def __call__(self, r: np.ndarray) -> np.ndarray:
++        op = self.op
++        nd, nt, ncd = self.nd, self.nt, self.ncd
++        k = op.k
++        # S_L r: contract the three source fields with the mass matrix once
++        # (one batched gemm), then spread them over the directions
++        src = np.ascontiguousarray(
++            r[:3 * k].reshape(3, nd, nt).transpose(2, 1, 0))       # (i, l, 3)
++        rhs = np.ascontiguousarray(
++            ((self.mlm @ src) @ self.smat).transpose(0, 2, 1))     # (i, ncd, m)
++        if op.n_fw:
++            rfw = r[3 * k:].reshape(op.n_fw, nd)
++            np.add.at(rhs, self.wall_tri,
++                      self.wall_wm[:, :, None]
++                      * (rfw[self.wall_slot] * (1.0 / self.alpha))[:, None, :])
++
++        g = self.lu.solve(rhs.reshape(-1)).reshape(nt, ncd, nd)
++
++        z = np.empty_like(r)
++        z[:3 * k] = r[:3 * k] + (self.dmat @ g).transpose(1, 2, 0).reshape(-1)
++        if op.n_fw:
++            zfw = z[3 * k:].reshape(op.n_fw, nd)
++            zfw[:] = r[3 * k:].reshape(op.n_fw, nd)
++            t = np.einsum('jd,jdl->jl', self.wall_emit, g[self.wall_tri])
++            zfw[self.wall_slot] += self.alpha * (self.wall_fcm @ t[:, :, None])[:, :, 0]
++        return z
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/moments.py solution/pybte/moments.py
+--- environment/pybte/moments.py	2026-09-06 13:07:47.300862678 +0800
++++ solution/pybte/moments.py	2026-09-09 22:11:15.825434083 +0800
+@@ -23,7 +23,8 @@
+ 
+ from ._kernels import moments_kernel, residual_kernel, sum_kernel
+ 
+-__all__ = ["Moments", "compute_moments", "residual_iterate"]
++__all__ = ["Moments", "compute_moments", "compute_moments_kernel",
++           "residual_iterate"]
+ 
+ 
+ @dataclass
+@@ -40,6 +41,11 @@
+     def mass(self) -> float:
+         return float(sum_kernel(self.temp))
+ 
++    @property
++    def mass_np(self) -> float:
++        """``sum(Temp)`` without the jitted reduction."""
++        return float(np.sum(self.temp))
++
+     @classmethod
+     def zeros(cls, ndof_tri: int, n_tris: int) -> "Moments":
+         return cls(ts=np.zeros((ndof_tri, n_tris)),
+@@ -49,7 +55,30 @@
+ 
+ 
+ def compute_moments(vdf, cxv, cyv, domega, int_tri, cv, mom: Moments) -> Moments:
+-    """In-place update of ``mom`` from ``vdf`` (shape ``(ndir, n_tris, ndof)``)."""
++    """In-place update of ``mom`` from ``vdf`` (shape ``(ndir, n_tris, ndof)``).
++
++    The three moments are one ``(3, NDIR) x (NDIR, N_TRIS*NDOF)`` product --
++    the whole reduction is a single BLAS call on contiguous memory, which
++    beats a hand-rolled loop over directions by enough to matter when the
++    outer solve takes tens of sweeps rather than tens of thousands.
++    """
++    ndir, n_tris, nd = vdf.shape
++    w = np.empty((3, ndir))
++    w[0] = domega
++    np.multiply(cxv, domega, out=w[1])
++    np.multiply(cyv, domega, out=w[2])
++    m = (w @ vdf.reshape(ndir, n_tris * nd)).reshape(3, n_tris, nd)
++    np.multiply(m[0].T, 1.0 / cv, out=mom.ts)
++    mom.qxs[:] = m[1].T
++    mom.qys[:] = m[2].T
++    np.sum(mom.ts * int_tri, axis=0, out=mom.temp)
++    np.sum(mom.qxs * int_tri, axis=0, out=mom.qx)
++    np.sum(mom.qys * int_tri, axis=0, out=mom.qy)
++    return mom
++
++
++def compute_moments_kernel(vdf, cxv, cyv, domega, int_tri, cv, mom: Moments) -> Moments:
++    """``Calculate_Macro_Properties`` as the Fortran writes it, for reference."""
+     moments_kernel(vdf, cxv, cyv, domega, int_tri, cv,
+                    mom.ts, mom.qxs, mom.qys, mom.temp, mom.qx, mom.qy)
+     return mom
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/ordering.py solution/pybte/ordering.py
+--- environment/pybte/ordering.py	2026-09-06 13:06:59.074890508 +0800
++++ solution/pybte/ordering.py	2026-09-09 22:13:56.098122625 +0800
+@@ -26,7 +26,8 @@
+ 
+ import numpy as np
+ 
+-from ._numba import njit, prange
++from . import _ckernels
++from ._numba import HAVE_NUMBA, njit, prange
+ 
+ __all__ = ["SweepOrder", "build_sweep_order", "SweepCycleError",
+            "validate_sweep_order"]
+@@ -140,6 +141,40 @@
+     return status
+ 
+ 
++def _order_numpy(neighbour, nx, ny, cx, cy, order, cycles, allow_break):
++    """The same pass numbering, vectorised, for when neither the compiled nor
++    the jitted kernel is available.
++
++    Element ``i`` is emitted in the pass ``p(i) = max over upwind j of
++    (p(j) + [j > i])`` (1 if it has no upwind neighbour), which is the fixed
++    point of a monotone map and is reached by iterating it; the order is that
++    pass number with ties broken by ascending index, exactly as the Fortran's
++    repeated ascending scan produces.
++    """
++    n = neighbour.shape[0]
++    ndir = cx.size
++    flux = cx[:, None, None] * nx[None] + cy[:, None, None] * ny[None]
++    has = neighbour >= 0
++    up = (flux < 0.0) & has[None]                       # (ndir, n, 3)
++    nbc = np.where(has, neighbour, 0)
++    later = (nbc > np.arange(n)[:, None])
++    step = np.where(later, 1, 0)[None] + np.where(up, 0, -4 * n)
++    p = np.ones((ndir, n), dtype=np.int64)
++    for _ in range(n + 1):
++        cand = p[:, nbc] + step
++        new = np.maximum(cand.max(axis=2), 1)
++        if np.array_equal(new, p):
++            break
++        p = new
++    else:
++        if not allow_break:
++            return -1
++        return -1                                       # pragma: no cover
++    order[:] = np.argsort(p * n + np.arange(n)[None], axis=1, kind="stable")
++    cycles[:] = 0
++    return 0
++
++
+ def build_sweep_order(mesh, vel, on_cycle: str = "raise") -> SweepOrder:
+     """Build ``TRI_ORDER`` for every direction.
+ 
+@@ -161,9 +196,17 @@
+     ny = np.ascontiguousarray(mesh.tri_normal[:, :, 1])
+     neighbour = np.ascontiguousarray(mesh.tri_neighbour.astype(np.int32))
+ 
+-    status = _order_kernel(neighbour, nx, ny,
+-                           np.ascontiguousarray(cx), np.ascontiguousarray(cy),
+-                           order, cycles, on_cycle == "break")
++    cx = np.ascontiguousarray(cx)
++    cy = np.ascontiguousarray(cy)
++    if _ckernels.HAVE_C:
++        status = _ckernels.sweep_order(neighbour, nx, ny, cx, cy, order, cycles,
++                                       on_cycle == "break")
++    elif HAVE_NUMBA:
++        status = _order_kernel(neighbour, nx, ny, cx, cy, order, cycles,
++                               on_cycle == "break")
++    else:
++        status = _order_numpy(neighbour, nx, ny, cx, cy, order, cycles,
++                              on_cycle == "break")
+     if status != 0:
+         bad = int(np.flatnonzero((order < 0).any(axis=1))[0])
+         raise SweepCycleError(
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/sweep.py solution/pybte/sweep.py
+--- environment/pybte/sweep.py	2026-09-08 16:38:19.802615782 +0800
++++ solution/pybte/sweep.py	2026-09-09 22:35:33.130469129 +0800
+@@ -27,7 +27,7 @@
+ 
+ import numpy as np
+ 
+-from . import _kernels
++from . import _ckernels, _kernels
+ from ._numba import HAVE_NUMBA, set_num_threads
+ from .constants import PI
+ 
+@@ -62,8 +62,14 @@
+     flux_wall: np.ndarray
+     mode: str = "precomputed"
+     kernel: str = "numba"
++    #: zeros in the shape of ``bc_temp``; see :meth:`sweep`
++    _bc_temp_zero: np.ndarray | None = None
+     lu: np.ndarray | None = field(default=None, repr=False)
+     piv: np.ndarray | None = field(default=None, repr=False)
++    #: (ndir, n_tris, ndof, ndof) inverses, for the compiled kernel
++    inv: np.ndarray | None = field(default=None, repr=False)
++    _qmass: np.ndarray | None = field(default=None, repr=False)
++    _src3: np.ndarray | None = field(default=None, repr=False)
+     sweep_count: int = 0
+ 
+     # -- construction ------------------------------------------------------
+@@ -92,24 +98,56 @@
+             bc_type=bcdata.bc_type, bc_temp=bcdata.bc_temp,
+             flux_wall=bcdata.flux_wall,
+         )
++        ctx._bc_temp_zero = np.zeros_like(ctx.bc_temp)
+         set_num_threads(case.performance.threads)
+-        ctx.kernel = case.performance.kernel if HAVE_NUMBA else "numpy"
++        want = case.performance.kernel
++        if want == "auto":
++            want = "c" if _ckernels.HAVE_C else ("numba" if HAVE_NUMBA else "numpy")
++        elif want == "c" and not _ckernels.HAVE_C:
++            want = "numba" if HAVE_NUMBA else "numpy"
++        elif want == "numba" and not HAVE_NUMBA:
++            want = "numpy"
++        ctx.kernel = want
++        if want == "c":
++            _ckernels.set_num_threads(case.performance.threads)
+ 
+         if precompute is None:
+             precompute = case.performance.precompute_inverse
+         nbytes = ctx.operator_bytes(mesh.n_tris, case.ndof_tri)
+-        if precompute and nbytes <= max_bytes and ctx.kernel == "numba":
++        if precompute and nbytes <= max_bytes and ctx.kernel in ("numba", "c"):
+             ctx.factorise()
+         else:
+             # the numpy reference kernel builds its own operators inline
+             ctx.mode = "onthefly"
++            if ctx.kernel == "c":
++                ctx.kernel = "numba" if HAVE_NUMBA else "numpy"
+         return ctx
+ 
+     def operator_bytes(self, n_tris: int, ndof: int) -> float:
+         return float(self.cxv.size) * n_tris * ndof * ndof * 8.0
+ 
+     def factorise(self) -> None:
+-        """LU-factorise ``A_SOL`` for every (direction, element) pair."""
++        """Prepare the element operators for every ``(direction, element)``.
++
++        ``A_SOL`` depends only on geometry, direction and ``TAU_C`` -- all
++        iteration-invariant -- so it is built once here rather than inside
++        the sweep.  The compiled kernel stores the explicit inverse, which
++        turns the per-element solve into a dense matrix-vector product; the
++        jitted kernel stores the LU pair, as the Fortran's ``DGETRF`` /
++        ``DGETRS`` do.
++        """
++        if self.kernel == "c":
++            nd, _, n_tris = self.mass.shape
++            self.inv = np.empty((self.cxv.size, n_tris, nd, nd))
++            bad = _ckernels.build_inverse(
++                self.cxv, self.cyv, 1.0 / self.tau_c, self.mass,
++                self.gx, self.gy, self.fcm, self.nx, self.ny, self.inv)
++            if bad:
++                raise np.linalg.LinAlgError(
++                    f"{bad} element operators are singular; check TAU_C "
++                    "and the mesh")
++            self.mode = "precomputed"
++            return
+         ndir = self.cxv.size
+         nd, _, n_tris = self.mass.shape
+         self.lu = np.empty((ndir, n_tris, nd, nd))
+@@ -124,12 +162,26 @@
+         self.mode = "precomputed"
+ 
+     # -- the sweep ---------------------------------------------------------
+-    def sweep(self, mom, vdf) -> None:
+-        """One transport sweep, in place on ``vdf`` (ndir, n_tris, ndof)."""
++    def sweep(self, mom, vdf, with_bc: bool = True) -> None:
++        """One transport sweep, in place on ``vdf`` (ndir, n_tris, ndof).
++
++        ``with_bc=False`` drops the *constant* part of the inflow -- the
++        emission of the isothermal walls -- and keeps everything that depends
++        on the current state (the scattering source, the interior and
++        periodic inflow, the diffuse-wall emission).  That is exactly the
++        splitting the outer solve needs: the sweep is affine in the moments,
++        and its linear part is what a Krylov method multiplies by.
++        """
++        bc_temp = self.bc_temp if with_bc else self._bc_temp_zero
++        if self.kernel == "c":
++            sa, sb, sc = self.source_fields(mom)
++            _ckernels.sweep(self, sa, sb, sc, bc_temp, vdf)
++            self.sweep_count += 1
++            return
+         if self.kernel == "numpy":
+             from .sweep_reference import sweep_reference
+ 
+-            sweep_reference(self, mom, vdf)
++            sweep_reference(self, mom, vdf, bc_temp=bc_temp)
+             self.sweep_count += 1
+             return
+         if self.mode == "precomputed":
+@@ -138,7 +190,7 @@
+                 self.tau_r, self.tau_n, PI,
+                 self.mass, self.ttfc, self.nx, self.ny, self.tri_faces,
+                 self.face_bc, self.neighbour, self.periodic_tri,
+-                self.bc_type, self.bc_temp, self.flux_wall,
++                self.bc_type, bc_temp, self.flux_wall,
+                 mom.ts, mom.qxs, mom.qys, self.lu, self.piv, vdf)
+         else:
+             _kernels.sweep_onthefly(
+@@ -147,9 +199,34 @@
+                 self.mass, self.gx, self.gy, self.fcm, self.ttfc,
+                 self.nx, self.ny, self.tri_faces, self.face_bc,
+                 self.neighbour, self.periodic_tri, self.bc_type,
+-                self.bc_temp, self.flux_wall, mom.ts, mom.qxs, mom.qys, vdf)
++                bc_temp, self.flux_wall, mom.ts, mom.qxs, mom.qys, vdf)
+         self.sweep_count += 1
+ 
++    # -- the scattering source, contracted -----------------------------------
++    def source_fields(self, mom):
++        """``(sa, sb, sc)``, each ``(n_tris, ndof)``: the scattering source
++        with its angular dependence factored out.
++
++        ``A_SRC(m) = sum_l INT_TRI_TRI(l,m,i) * (Cv T_l/(4 pi tau_C)
++        + 3 (qx_l cx + qy_l cy)/(4 pi Vg^2 tau_N))`` is affine in ``(cx, cy)``
++        for fixed moments, so the ``sum_l`` -- the only ``O(NDOF^2)`` part of
++        the source -- can be done once for all directions instead of once per
++        direction.
++        """
++        if self._qmass is None:
++            # INT_NODFUNC_TRI_TRI as (i, m, l) with the (m, l) transposed:
++            # the source contracts the *first* index of the mass matrix
++            self._qmass = np.ascontiguousarray(np.transpose(self.mass, (2, 1, 0)))
++            self._src3 = np.empty((self.mass.shape[2], self.mass.shape[0], 3))
++        f0 = self.cv / (4.0 * PI * self.tau_c)
++        f1 = 3.0 / (4.0 * PI * self.vg * self.vg * self.tau_n)
++        s3 = self._src3
++        np.multiply(mom.ts.T, f0, out=s3[:, :, 0])
++        np.multiply(mom.qxs.T, f1, out=s3[:, :, 1])
++        np.multiply(mom.qys.T, f1, out=s3[:, :, 2])
++        out = np.ascontiguousarray(np.matmul(self._qmass, s3).transpose(2, 0, 1))
++        return out[0], out[1], out[2]
++
+     # -- true transport residual --------------------------------------------------------------
+     def true_residual(self, mom, vdf) -> float:
+         """``||A_SOL f - A_SRC|| / ||A_SRC||`` in the solid-angle-weighted
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/sweep_reference.py solution/pybte/sweep_reference.py
+--- environment/pybte/sweep_reference.py	2026-09-05 02:11:02.393415334 +0800
++++ solution/pybte/sweep_reference.py	2026-09-09 21:36:06.725405869 +0800
+@@ -19,8 +19,10 @@
+ __all__ = ["sweep_reference"]
+ 
+ 
+-def sweep_reference(ctx, mom, vdf) -> None:
++def sweep_reference(ctx, mom, vdf, bc_temp=None) -> None:
+     """One sweep, in place on ``vdf`` with shape ``(ndir, n_tris, ndof)``."""
++    if bc_temp is None:
++        bc_temp = ctx.bc_temp
+     nd = ctx.mass.shape[0]
+     n_tris = ctx.order.shape[1]
+     ndir = ctx.cxv.size
+@@ -73,7 +75,7 @@
+                 elif ctx.bc_type[bc] == 2:
+                     src -= w * (-ctx.flux_wall[fc])
+                 else:
+-                    tw = cv / 4.0 / PI * ctx.bc_temp[bc]
++                    tw = cv / 4.0 / PI * bc_temp[bc]
+                     src -= w * (tw * ctx.ttfc[i, il, :, 0])
+ 
+             lu, piv = lu_factor(a)

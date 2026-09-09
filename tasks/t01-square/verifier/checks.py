@@ -43,6 +43,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import subprocess
 import sys
 import tempfile
@@ -54,9 +55,19 @@ HERE = Path(__file__).resolve().parent
 TASK = HERE.parent
 
 
+# Grading is single-threaded, on both sides of the ratio.  The score is a
+# ratio of wall-clocks; letting either side use however many cores it finds
+# would make it a statement about the machine, and a submission that
+# parallelises the sweep would be scoring core count rather than iteration
+# design.  (The Dockerfile pins the same variables for container runs.)
+PINNED = dict(os.environ, OMP_NUM_THREADS="1", MKL_NUM_THREADS="1",
+              OPENBLAS_NUM_THREADS="1", NUMBA_NUM_THREADS="1",
+              PYTHONHASHSEED="0")
+
+
 def run_stage(script, *args):
     out = subprocess.run([sys.executable, str(HERE / script), *map(str, args)],
-                         capture_output=True, text=True)
+                         capture_output=True, text=True, env=PINNED)
     if out.returncode != 0:
         return None, (out.stderr or out.stdout).strip()[-2000:]
     try:
