@@ -1,0 +1,1115 @@
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/README.md solution/README.md
+--- environment/README.md	2026-09-08 16:38:19.804116549 +0800
++++ solution/README.md	2026-09-10 06:20:41.715037657 +0800
+@@ -1,15 +1,16 @@
+ # Phonon Boltzmann transport solver
+ 
+ Steady 2D2V gray linear Callaway phonon BTE.  Nodal discontinuous Galerkin in
+-space, discrete ordinates in angle, source iteration in time.
++space, discrete ordinates in angle, diffusion-accelerated Krylov iteration in
++the macroscopic unknowns.
+ 
+     from pybte import Case, Solver
+-    record = Solver(Case.from_yaml("cases/kn_1e-2.yaml")).run()
++    record = Solver(Case.from_yaml("cases/F1_1e-2.yaml")).run()
+     record.iterations, record.converged, record.temp
+ 
+ or from the command line::
+ 
+-    python -m pybte cases/kn_1e-2.yaml
++    python -m pybte cases/F1_1e-2.yaml
+ 
+ ## The model
+ 
+@@ -23,16 +24,54 @@
+ 
+ ## How one iteration works
+ 
+-    while True:
+-        sweep()                 # exact transport solve, one direction at a time,
+-                                # in a topological order of the element graph
+-        compute_moments()       # T, qx, qy from the distribution
+-        if residual < tol: break
++The transport sweep is unchanged from the reference:
++
++    sweep()                 # exact transport solve, one direction at a time,
++                            # in a topological order of the element graph
++    compute_moments()       # T, qx, qy from the distribution
+ 
+ The sweep is Gauss-Seidel: within a direction each element reads inflow from
+ neighbours already updated in the same pass, which is what makes it an exact
+ solve for that direction.
+ 
++What changed is what surrounds it.  Everything the sweep reads is macroscopic
++-- `T`, `qx`, `qy`, and the emission of any diffusely reflecting wall -- so
++one sweep plus one moment update evaluates an *affine* map `y -> G y + g` on
++a few thousand unknowns, at the cost of one sweep.  The reference loop is
++Richardson iteration on `(I - G) y = g`:
++
++    while True:
++        y = G y + g
++        if ||dy|| < tol: break
++
++and it converges at `1 - O((Vg tau_C k)^2)` per sweep, which is why it needs
++16 830 sweeps at `tau_R = 1e-2` and more than 30 000 at `tau_R = 1e-3`.
++`Solver.run` hands the same system to GMRES instead, preconditioned by the
++low-order (diffusion / phonon-hydrodynamic) operator that the transport
++sweep tends to when the cells are optically thick -- see `accel.py` for the
++derivation and for why the low-order operator has to be a *discontinuous*
++Galerkin one.  Every matvec is still exactly one `ctx.sweep`, the fixed point
++is bit-for-bit the one the reference loop is converging towards, and the
++whole benchmark set lands in 14 to 25 sweeps:
++
++| case | source iteration | this solver |
++|---|---|---|
++| `F1_1_1`      |     33 |  14 |
++| `F1_1e-1`     |    317 |  14 |
++| `F1_1e-2`     | 16 830 |  14 |
++| `F1_1e-3`     | >30 000 (no convergence) | 16 |
++| `F1_10_1e-2`  |  2 706 |  16 |
++| `F2_1_1`      |     75 |  16 |
++| `F2_1e-1`     |    643 |  18 |
++| `F2_1e-2`     | >30 000 (no convergence) | 17 |
++| `F2_1e-3`     | >30 000 (no convergence) | 19 |
++| `F2_10_1e-2`  |  2 444 |  25 |
++
++Sweep count is flat in the mesh too: 16-25 sweeps from 50 to 3200 elements.
++
++`Solver.run_source_iteration` still runs the original loop, and
++`scheme.accelerate: false` in a case file selects it.
++
+ ## Cases
+ 
+ Two boundary-condition families on the same square and the same
+@@ -45,12 +84,14 @@
+ 
+ A diffusely reflecting wall re-emits, isotropically, the energy that hits
+ it, so its emission depends on the solution: `bc.py` recomputes it from the
+-distribution at the start of every iteration.
++distribution at the start of every iteration, and `accel.py` carries it as
++part of the unknown.
+ 
+ ## Layout
+ 
+     pybte/          the solver
+       driver.py     the outer iteration
++      accel.py      the Krylov/DSA acceleration and its low-order operators
+       sweep.py      the transport sweep
+       moments.py    moments and the residual
+       basis.py      nodal DG bases
+@@ -67,6 +108,7 @@
+ * `Temp`, `Qx`, `Qy` on the run record are element *integrals*, not averages:
+   `record.temp.sum()` is the domain integral of `T`.  Divide by
+   `mesh.tri_area` for cell averages.
++* `record.iterations` counts transport sweeps.
+ * `NAZIM` is silently forced even.
+ * The angular quadrature is accurate to about `1e-13`, not to machine
+   precision; do not design a test that needs better.
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/cases/kn_1e-3.yaml solution/cases/kn_1e-3.yaml
+--- environment/cases/kn_1e-3.yaml	1970-01-01 08:00:00.000000000 +0800
++++ solution/cases/kn_1e-3.yaml	2026-09-10 04:41:55.664211574 +0800
+@@ -0,0 +1,13 @@
++# Isothermal square: T = 1 on the north wall, 0 on the other three.  Kn_R = 0.001.
++iteration:  {tol: 1.0e-8, tmax: 30000, true_residual: false}
++velmesh:    {npole: 10, nazim: 20}
++dg:         {deg: 2}
++flow:       {cv: 1.0, vg: 1.0, tau_r: 0.001, tau_n: 100000}
++mesh:       {file: ../meshes/A1_Nx11_Ny11.msh}
++boundaries:
++  - {name: SWall, phyid: 11, type: thermalising, temp: 0.0}
++  - {name: NWall, phyid: 12, type: thermalising, temp: 1.0}
++  - {name: EWall, phyid: 13, type: thermalising, temp: 0.0}
++  - {name: WWall, phyid: 14, type: thermalising, temp: 0.0}
++restart:    {enabled: false, path: null}
++output:     {dir: ../out/kn_1e-3, field: false, runtime_log: false, run_record: false}
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/__main__.py solution/pybte/__main__.py
+--- environment/pybte/__main__.py	2026-09-08 16:38:19.801918575 +0800
++++ solution/pybte/__main__.py	2026-09-10 06:08:27.777656334 +0800
+@@ -1,6 +1,6 @@
+ """Command-line interface.
+ 
+-    python -m pybte run     case.yaml [--tmax N] [--tol T] [--quiet]
++    python -m pybte [run]   case.yaml [--tmax N] [--tol T] [--quiet]
+     python -m pybte convert control.in [-o case.yaml] [--mesh-dir DIR]
+     python -m pybte info    case.yaml
+ """
+@@ -49,7 +49,7 @@
+         print(f"  sweeps          {rec.sweep_count}")
+         print(f"  factorisations  {rec.factorisation_count}")
+         print(f"  wall clock      {rec.wall_clock:.3f} s"
+-              f"  ({rec.wall_clock / max(rec.iterations, 1) * 1e3:.2f} ms/iter)")
++              f"  ({rec.wall_clock / max(rec.iterations, 1) * 1e3:.2f} ms/sweep)")
+         for k, v in written.items():
+             print(f"  wrote {k:12s} {v}")
+     return 0 if rec.converged else 1
+@@ -120,6 +120,10 @@
+     i.add_argument("case")
+     i.set_defaults(fn=_cmd_info)
+ 
++    argv = list(sys.argv[1:] if argv is None else argv)
++    # "python -m pybte case.yaml" -- the documented shorthand for "run"
++    if argv and argv[0] not in ("run", "convert", "info", "-h", "--help"):
++        argv.insert(0, "run")
+     args = p.parse_args(argv)
+     return args.fn(args)
+ 
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/accel.py solution/pybte/accel.py
+--- environment/pybte/accel.py	1970-01-01 08:00:00.000000000 +0800
++++ solution/pybte/accel.py	2026-09-10 06:26:03.106269419 +0800
+@@ -0,0 +1,574 @@
++"""Krylov acceleration of the source iteration.
++
++The outer iteration of :mod:`pybte.driver` is a fixed point in the
++*macroscopic* unknowns alone::
++
++    y = (T_s, qx_s, qy_s [, wall emission])        y = G y + g
++
++``G`` is affine: the sweep is an exact transport solve, so one call to
++``ctx.sweep`` followed by ``compute_moments`` evaluates ``G y + g`` at the
++cost of a single sweep, and ``g = Phi(0)``.  Source iteration is Richardson
++on that system, and its spectral radius approaches one whenever the medium
++is optically thick -- which is exactly what makes ``tau_R = 1e-3`` and the
++hydrodynamic pair unreachable in 30 000 sweeps.
++
++Two things are done about it.
++
++**Krylov.**  ``(I - G) y = g`` is handed to GMRES instead of to Richardson.
++Every matvec is still one sweep, so nothing about the transport solve
++changes; only the way the iterates are combined does.
++
++**Diffusion synthetic acceleration.**  Krylov alone is not enough (the
++spectrum of ``I - G`` collapses towards zero like ``(tau_C k)^2``), so GMRES
++is preconditioned with the low-order system that the transport operator
++tends to in the thick limit.  Fourier analysis of one sweep gives, for a
++plane wave of wavenumber ``k`` and ``a = k Vg tau_C``,
++
++    (I - G)_TT  = 1 - arctan(a)/a               ~ a^2/3
++    (I - G)_Tq  = beta tau_C / Cv * div
++    (I - G)_qT  = Cv Vg^2 tau_C / 3  * grad
++    (I - G)_qq  = delta + beta a^2/5 (transverse), + 3 beta a^2/5 (longitudinal)
++
++with ``delta = tau_C/tau_R`` and ``beta = tau_C/tau_N``.  Eliminating ``q``
++gives the familiar Fourier diffusion operator with ``kappa ~ Vg^2 tau_R/3``;
++keeping it gives the phonon-hydrodynamic (Guyer-Krumhansl) system that the
++``tau_R = 10, tau_N = 0.01`` pair needs, where the slowly converging mode is
++transverse momentum, not energy.
++
++Those operators are discretised on the *same* nodal DG space as the
++transport solve, with a modified interior penalty (MIP) Laplacian.  A
++continuous-FEM diffusion preconditioner is inconsistent for DG transport
++once the cells are many mean free paths thick -- at ``tau_R = 1e-3`` a cell
++is 100 mfp across -- and degrades to the point of uselessness there; the MIP
++form does not.
++
++The preconditioner only has to be *good*, never exact: it is applied inside
++GMRES, which converges to the same fixed point the shipped solver has.
++
++Diffusely reflecting walls need one more trick.  Their emission is a lagged
++state variable, and the lag couples to the interior through a block of rank
++``n_wall_faces * ndof`` which GMRES otherwise has to resolve one dimension at
++a time.  Writing the wall unknown as the *departure* from the local
++blackbody value ``-Cv/(4 pi) * oint phi_m T`` removes almost all of that
++coupling, and with it a factor of five in iteration count on the ``F2``
++family.
++"""
++from __future__ import annotations
++
++import numpy as np
++import scipy.sparse as sp
++import scipy.sparse.linalg as spla
++
++from .constants import BC_NONTHERMALISING, BC_THERMALISING, PI
++from .moments import compute_moments
++
++__all__ = ["MomentSystem", "DSAPreconditioner", "gmres_solve", "KRYLOV_RTOL"]
++
++#: Relative preconditioned-residual tolerance for the outer GMRES.  Left
++#: preconditioning makes that an estimate of the *error*, and the benchmark
++#: asks for 1e-5 on the temperature, so this leaves five orders of margin.
++KRYLOV_RTOL = 1.0e-10
++
++
++# ---------------------------------------------------------------------------
++# geometry-only pieces of the interior-penalty operators
++# ---------------------------------------------------------------------------
++def _ref_derivative_at_nodes(basis):
++    """``(D_xi, D_eta)`` with ``D[m, n] = d phi_m / d xi`` at nodal point n."""
++    C = basis.nodfun_tri
++    mono = basis.mono
++    xi, eta = basis.node_tri[:, 0], basis.node_tri[:, 1]
++    nd = C.shape[0]
++    dxi = np.zeros((nd, nd))
++    deta = np.zeros((nd, nd))
++    for k, (a, b) in enumerate(mono):
++        if a > 0:
++            dxi += np.outer(C[:, k] * a, xi ** (a - 1) * eta ** b)
++        if b > 0:
++            deta += np.outer(C[:, k] * b, xi ** a * eta ** (b - 1))
++    return dxi, deta
++
++
++class _ElementOperators:
++    """Per-element gradients, stiffness and the face bookkeeping the
++    interior-penalty assembly needs.  Built once, reused for every operator."""
++
++    def __init__(self, mesh, basis, integrals, deg):
++        self.mesh = mesh
++        self.nd = nd = basis.ndof_tri
++        self.nt = nt = mesh.n_tris
++        self.deg = deg
++
++        dxi, deta = _ref_derivative_at_nodes(basis)
++        x = mesh.nodes[mesh.tri_nodes, 0]
++        y = mesh.nodes[mesh.tri_nodes, 1]
++        x1, x2, x3 = x[:, 0], x[:, 1], x[:, 2]
++        y1, y2, y3 = y[:, 0], y[:, 1], y[:, 2]
++        A = (x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1)
++        E = (x3 - x1) * (y2 - y1) - (x2 - x1) * (y3 - y1)
++        # d phi_m / dx and /dy, sampled at the nodal points, per element
++        self.dx = ((y3 - y1) / A)[:, None, None] * dxi + ((y2 - y1) / E)[:, None, None] * deta
++        self.dy = ((x1 - x3) / A)[:, None, None] * dxi + ((x1 - x2) / E)[:, None, None] * deta
++
++        gx = integrals.int_tri_tri_x                 # (i, m, l) = int dphi_m/dx phi_l
++        gy = integrals.int_tri_tri_y
++        kel = (np.einsum("iln,imn->iml", self.dx, gx)
++               + np.einsum("iln,imn->iml", self.dy, gy))
++        self.kel = 0.5 * (kel + np.transpose(kel, (0, 2, 1)))
++        self.gx, self.gy = gx, gy
++        self.fcm = integrals.int_tri_fc              # (i, il, m, l), same element
++        self.ttfc = integrals.int_tri_tri_fc         # (i, il, m, l), neighbour
++
++        edge = np.stack([np.linalg.norm(mesh.nodes[mesh.tri_nodes[:, (j + 1) % 3]]
++                                        - mesh.nodes[mesh.tri_nodes[:, j]], axis=1)
++                         for j in range(3)], axis=1)
++        self.hperp = 2.0 * mesh.tri_area[:, None] / edge
++        self.pen_c = deg * (deg + 1) / 2.0
++
++        interior = np.flatnonzero(mesh.face_bc < 0)
++        self.ip = mesh.face_tri[interior, 0].astype(np.int64)
++        self.im = mesh.face_tri[interior, 1].astype(np.int64)
++        self.lp = mesh.face_lfc[interior, 0].astype(np.int64)
++        self.lm = mesh.face_lfc[interior, 1].astype(np.int64)
++        self.fnx = mesh.tri_normal[self.ip, self.lp, 0]
++        self.fny = mesh.tri_normal[self.ip, self.lp, 1]
++        self.n_int = interior.size
++
++        bdry = np.flatnonzero(mesh.face_bc >= 0)
++        self.bfaces = bdry
++        bt = np.where(mesh.face_tri[bdry, 0] >= 0, 0, 1)
++        self.bi = mesh.face_tri[bdry, bt].astype(np.int64)
++        self.bl = mesh.face_lfc[bdry, bt].astype(np.int64)
++        self.bnx = mesh.tri_normal[self.bi, self.bl, 0]
++        self.bny = mesh.tri_normal[self.bi, self.bl, 1]
++
++        # sparsity pattern is the same for every operator assembled here
++        idx = np.arange(nd)
++        self._rr = np.repeat(idx, nd)
++        self._cc = np.tile(idx, nd)
++
++    # -- helpers -----------------------------------------------------------
++    def _pattern(self, bi, bj):
++        return (bi[:, None] * self.nd + self._rr[None, :],
++                bj[:, None] * self.nd + self._cc[None, :])
++
++    def _coo(self, pieces):
++        rows = np.concatenate([p[0].ravel() for p in pieces])
++        cols = np.concatenate([p[1].ravel() for p in pieces])
++        vals = np.concatenate([p[2].ravel() for p in pieces])
++        n = self.nt * self.nd
++        return sp.coo_matrix((vals, (rows, cols)), shape=(n, n))
++
++    # -- the operators -----------------------------------------------------
++    def laplacian(self, dcoef, pen_floor, bdry_coef, mass_coef=0.0, mass=None):
++        """MIP interior-penalty ``-dcoef * lap`` plus optional mass and a
++        Robin (Marshak) boundary term ``bdry_coef[f] * oint u v``."""
++        nt = self.nt
++        allt = np.arange(nt)
++        blk = dcoef * self.kel
++        if mass_coef:
++            blk = blk + mass_coef * np.transpose(mass, (2, 0, 1))
++        pieces = [self._pattern(allt, allt) + (blk,)]
++
++        if self.n_int:
++            ip, im, lp, lm = self.ip, self.im, self.lp, self.lm
++            nx, ny = self.fnx[:, None, None], self.fny[:, None, None]
++            dnp = nx * self.dx[ip] + ny * self.dy[ip]
++            dnm = nx * self.dx[im] + ny * self.dy[im]
++            fpp = self.fcm[ip, lp]
++            fmm = self.fcm[im, lm]
++            fpm = self.ttfc[ip, lp]
++            fmp = self.ttfc[im, lm]
++            sig = np.maximum(pen_floor,
++                             self.pen_c * dcoef * (1.0 / self.hperp[ip, lp]
++                                                   + 1.0 / self.hperp[im, lm]))
++            sig = sig[:, None, None]
++            t_pp = -0.5 * dcoef * np.einsum("fmn,fln->fml", fpp, dnp)
++            t_pm = -0.5 * dcoef * np.einsum("fmn,fln->fml", fpm, dnm)
++            t_mp = +0.5 * dcoef * np.einsum("fmn,fln->fml", fmp, dnp)
++            t_mm = +0.5 * dcoef * np.einsum("fmn,fln->fml", fmm, dnm)
++            tr = lambda a: np.transpose(a, (0, 2, 1))
++            pieces += [
++                self._pattern(ip, ip) + (t_pp + tr(t_pp) + sig * fpp,),
++                self._pattern(im, im) + (t_mm + tr(t_mm) + sig * fmm,),
++                self._pattern(ip, im) + (t_pm + tr(t_mp) - sig * fpm,),
++                self._pattern(im, ip) + (t_mp + tr(t_pm) - sig * fmp,),
++            ]
++        cb = np.asarray(bdry_coef)[self.bfaces]
++        keep = cb != 0.0
++        if np.any(keep):
++            bi = self.bi[keep]
++            pieces.append(self._pattern(bi, bi)
++                          + (cb[keep][:, None, None] * self.fcm[bi, self.bl[keep]],))
++        return self._coo(pieces).tocsr()
++
++    def gradients(self):
++        """Weak DG gradient with central fluxes: ``(Gx u)_m = int phi_m du/dx``.
++
++        The same pair also assembles the divergence, ``Gx qx + Gy qy``.
++        """
++        nt = self.nt
++        allt = np.arange(nt)
++        px = [self._pattern(allt, allt) + (-self.gx,)]
++        py = [self._pattern(allt, allt) + (-self.gy,)]
++        if self.n_int:
++            ip, im, lp, lm = self.ip, self.im, self.lp, self.lm
++            nx, ny = self.fnx[:, None, None], self.fny[:, None, None]
++            fpp = self.fcm[ip, lp]
++            fmm = self.fcm[im, lm]
++            fpm = self.ttfc[ip, lp]
++            fmp = self.ttfc[im, lm]
++            px += [self._pattern(ip, ip) + (0.5 * nx * fpp,),
++                   self._pattern(ip, im) + (0.5 * nx * fpm,),
++                   self._pattern(im, im) + (-0.5 * nx * fmm,),
++                   self._pattern(im, ip) + (-0.5 * nx * fmp,)]
++            py += [self._pattern(ip, ip) + (0.5 * ny * fpp,),
++                   self._pattern(ip, im) + (0.5 * ny * fpm,),
++                   self._pattern(im, im) + (-0.5 * ny * fmm,),
++                   self._pattern(im, ip) + (-0.5 * ny * fmp,)]
++        fb = self.fcm[self.bi, self.bl]
++        px.append(self._pattern(self.bi, self.bi) + (self.bnx[:, None, None] * fb,))
++        py.append(self._pattern(self.bi, self.bi) + (self.bny[:, None, None] * fb,))
++        return self._coo(px).tocsr(), self._coo(py).tocsr()
++
++
++# ---------------------------------------------------------------------------
++# the moment fixed point
++# ---------------------------------------------------------------------------
++class MomentSystem:
++    """``Phi(y) = G y + g`` -- one sweep, packed into the moment unknowns.
++
++    The state is ``(T_s, qx_s, qy_s)`` and, when a diffusely reflecting wall
++    is present, the departure of the wall emission from the local blackbody
++    value.  Everything the sweep reads is in there, so ``Phi`` is affine and
++    its fixed point is the fixed point of :meth:`pybte.driver.Solver.step`.
++    """
++
++    def __init__(self, solver):
++        self.s = solver
++        c = solver.case
++        m = solver.mesh
++        bd = solver.bcdata
++        self.nd = solver.ndof
++        self.nt = solver.n_tris
++        self.n1 = self.nd * self.nt
++        self.nmom = 3 * self.n1
++        self.cv = c.flow.cv
++
++        wall = np.array([bd.bc_type[b] == BC_NONTHERMALISING if b >= 0 else False
++                         for b in m.face_bc])
++        self.wfaces = np.flatnonzero(wall)
++        self.nw = self.wfaces.size
++        self.n = self.nmom + self.nw * self.nd
++        if self.nw:
++            side = np.where(m.face_tri[self.wfaces, 0] >= 0, 0, 1)
++            wtri = m.face_tri[self.wfaces, side].astype(np.int64)
++            wlfc = m.face_lfc[self.wfaces, side].astype(np.int64)
++            self.wtri = wtri
++            # oint phi_m phi_l on each reflecting face, times -Cv/4pi
++            self.wpsi = -(self.cv / (4.0 * PI)) * solver.integrals.int_tri_fc[wtri, wlfc]
++        self.sweeps = 0
++
++    # -- the blackbody part of the wall emission ---------------------------
++    def _psi(self, ts):
++        return np.einsum("wml,lw->wm", self.wpsi, ts[:, self.wtri])
++
++    def unpack(self, y):
++        return y[:self.nmom].reshape(3, self.nd, self.nt)
++
++    def apply(self, y, out=None):
++        """One sweep from state ``y``; returns ``Phi(y)``."""
++        s = self.s
++        bd = s.bcdata
++        ts, qxs, qys = self.unpack(y)
++        if self.nw:
++            e = y[self.nmom:].reshape(self.nw, self.nd)
++            bd.flux_wall[:] = 0.0
++            bd.flux_wall[self.wfaces] = self._psi(ts) + e
++        s.mom.ts[:] = ts
++        s.mom.qxs[:] = qxs
++        s.mom.qys[:] = qys
++        s.ctx.sweep(s.mom, s.vdf)
++        self.sweeps += 1
++        if self.nw:
++            bd.update_wall_flux(s.vdf, s.ctx.cxv, s.ctx.cyv, s.ctx.domega,
++                                s.integrals.int_tri_fc, s.mesh)
++        compute_moments(s.vdf, s.ctx.cxv, s.ctx.cyv, s.ctx.domega,
++                        s.integrals.int_tri, self.cv, s.mom)
++        if out is None:
++            out = np.empty(self.n)
++        out[0:self.n1] = s.mom.ts.ravel()
++        out[self.n1:2 * self.n1] = s.mom.qxs.ravel()
++        out[2 * self.n1:self.nmom] = s.mom.qys.ravel()
++        if self.nw:
++            out[self.nmom:] = (bd.flux_wall[self.wfaces] - self._psi(s.mom.ts)).ravel()
++        return out
++
++    def pack_current(self):
++        """The state that the solver's current moments/VDF already represent."""
++        s = self.s
++        y = np.empty(self.n)
++        y[0:self.n1] = s.mom.ts.ravel()
++        y[self.n1:2 * self.n1] = s.mom.qxs.ravel()
++        y[2 * self.n1:self.nmom] = s.mom.qys.ravel()
++        if self.nw:
++            y[self.nmom:] = (s.bcdata.flux_wall[self.wfaces]
++                             - self._psi(s.mom.ts)).ravel()
++        return y
++
++
++# ---------------------------------------------------------------------------
++# the preconditioner
++# ---------------------------------------------------------------------------
++def _factorise(A):
++    """Sparse LU with the ordering that suits these operators.
++
++    They are structurally symmetric and nearly diagonally dominant, so the
++    ``A + A^T`` minimum-degree ordering with static pivoting factorises them
++    an order of magnitude faster than the ``COLAMD`` default and produces a
++    third of the fill.  Partial pivoting is restored if that fails: this is
++    a preconditioner, but a preconditioner that raises is no use.
++    """
++    try:
++        return spla.splu(A, permc_spec="MMD_AT_PLUS_A", diag_pivot_thresh=0.0)
++    except RuntimeError:                                   # pragma: no cover
++        pass
++    try:
++        return spla.splu(A)
++    except RuntimeError:                                   # pragma: no cover
++        # a pure-Neumann low-order operator has a constant null space; shift
++        # it just enough to factorise -- GMRES absorbs the difference
++        n = A.shape[0]
++        scale = abs(A.diagonal()).max() or 1.0
++        return spla.splu((A + 1.0e-8 * scale * sp.eye(n, format="csc")).tocsc())
++
++
++class DSAPreconditioner:
++    """Approximate ``(I - G)^{-1}`` from the thick-limit moment system.
++
++    ``apply(r) = r + A^{-1} (M r)`` with ``A`` the discretised low-order
++    operator and ``M`` the DG mass matrix.  The ``+r`` is what makes the
++    preconditioner degrade gracefully to the identity in the ballistic limit,
++    where the thick-limit expansion the operator comes from does not hold:
++    there ``A`` grows like ``(k Vg tau_C)^2`` and its inverse vanishes, and a
++    preconditioner that tends to zero would leave GMRES with nothing to work
++    on.
++
++    ``A`` is built in one of two shapes.
++
++    ``decoupled``  ``tau_N >> tau_R``.  N-scattering is too rare to move
++                   energy, the ``T``-``q`` coupling terms carry the factor
++                   ``beta = tau_C/tau_N`` and vanish with it, and the two
++                   blocks are solved separately -- a 1/3-size factorisation.
++    ``coupled``    the hydrodynamic corner, ``tau_R >> tau_N``.  The block
++                   that converges slowly there is *transverse momentum*, and
++                   the energy block only sees it through ``div q``, so the
++                   three fields have to be factorised together.
++    """
++
++    #: build the T-q coupled system only when N-scattering actually dominates
++    COUPLED_RATIO = 3.0
++    #: MIP penalty floor, in units of the mean free path.  Wang & Ragusa put
++    #: it at 1/4; on this discretisation 1/2 is the flat optimum and 1/8 or
++    #: below loses the thick-cell consistency the floor exists for.
++    PEN_FLOOR = 0.5
++    #: Marshak boundary coefficient, again per mean free path
++    ROBIN = 0.5
++    #: (Vg tau_C)^2 * DIFF_T * (-lap) is the energy operator ...
++    DIFF_T = 1.0 / 3.0
++    #: ... and DIFF_Q the momentum (viscous) one
++    DIFF_Q = 1.0 / 5.0
++
++    def __init__(self, solver, elem=None):
++        c = solver.case
++        m = solver.mesh
++        bd = solver.bcdata
++        self.nd = nd = solver.ndof
++        self.nt = nt = solver.n_tris
++        self.n1 = nd * nt
++        self.mass = solver.integrals.int_tri_tri
++
++        vg = c.flow.vg
++        cv = c.flow.cv
++        tau_c = c.tau_c
++        lam = vg * tau_c
++        delta = tau_c / c.flow.tau_r          # tau_C/tau_R, the resistive share
++        beta = tau_c / c.flow.tau_n           # tau_C/tau_N, the normal share
++        self.delta = delta
++
++        el = _ElementOperators(m, solver.basis, solver.integrals, c.dg.deg) \
++            if elem is None else elem
++
++        therm = np.zeros(m.n_faces)
++        allb = np.zeros(m.n_faces)
++        for f in range(m.n_faces):
++            b = int(m.face_bc[f])
++            if b >= 0:
++                allb[f] = self.ROBIN * lam
++                if bd.bc_type[b] == BC_THERMALISING:
++                    therm[f] = self.ROBIN * lam
++
++        # energy: (Vg tau_C)^2/3 * (-lap), Marshak wall, MIP penalty floor
++        kt = el.laplacian(lam * lam * self.DIFF_T, self.PEN_FLOOR * lam, therm)
++        # momentum: delta + beta (Vg tau_C)^2/5 * (-lap)
++        lq = el.laplacian(lam * lam * self.DIFF_Q * beta,
++                          self.PEN_FLOOR * lam * beta, allb * beta,
++                          mass_coef=delta, mass=self.mass)
++
++        self.coupled = beta > 0.0 and c.flow.tau_r > self.COUPLED_RATIO * c.flow.tau_n
++        if self.coupled:
++            gx, gy = el.gradients()
++            c1 = beta * tau_c / cv
++            c2 = cv * vg * vg * tau_c / 3.0
++            zero = sp.csr_matrix((self.n1, self.n1))
++            A = sp.bmat([[kt, c1 * gx, c1 * gy],
++                         [c2 * gx, lq, zero],
++                         [c2 * gy, zero, lq]], format="csc")
++            self.lu = _factorise(A)
++            self.lu_t = self.lu_q = None
++        else:
++            self.lu_t = _factorise(kt.tocsc())
++            if self._viscous_negligible(beta, lam, delta, m):
++                # lq is delta*M, which is block diagonal: invert it directly
++                self.lu_q = None
++                self.minv = np.linalg.inv(np.transpose(self.mass, (2, 0, 1))) / delta
++            else:
++                self.lu_q = _factorise(lq.tocsc())
++            self.lu = None
++
++    @staticmethod
++    def _viscous_negligible(beta, lam, delta, mesh):
++        """Is ``beta (Vg tau_C)^2/5 * (-lap)`` lost in ``delta`` on this mesh?
++
++        When it is -- the whole ``tau_N -> inf`` family -- the momentum block
++        is just ``delta * M``, which is block diagonal and needs no factors.
++        """
++        h = float(mesh.hmin)
++        return beta * lam * lam / (5.0 * h * h) < 1.0e-10 * delta if delta else False
++
++    # -- transfers between (ndof, n_tris) fields and element-major vectors --
++    def _weak(self, f):
++        return np.einsum("mli,li->im", self.mass, f).ravel()
++
++    @staticmethod
++    def _to_field(v, nd, nt):
++        return v.reshape(nt, nd).T
++
++    def apply(self, r, out=None):
++        nd, nt, n1 = self.nd, self.nt, self.n1
++        a = r[:3 * n1].reshape(3, nd, nt)
++        if out is None:
++            out = np.empty_like(r)
++        out[:] = r
++        if self.coupled:
++            w = np.concatenate([self._weak(a[0]), self._weak(a[1]), self._weak(a[2])])
++            z = self.lu.solve(w)
++            for j in range(3):
++                out[j * n1:(j + 1) * n1] += self._to_field(
++                    z[j * n1:(j + 1) * n1], nd, nt).ravel()
++        else:
++            out[0:n1] += self._to_field(
++                self.lu_t.solve(self._weak(a[0])), nd, nt).ravel()
++            for j in (1, 2):
++                rhs = self._weak(a[j])
++                if self.lu_q is None:
++                    dq = np.einsum("iml,il->im", self.minv,
++                                   rhs.reshape(nt, nd)).ravel()
++                else:
++                    dq = self.lu_q.solve(rhs)
++                out[j * n1:(j + 1) * n1] += self._to_field(dq, nd, nt).ravel()
++        return out
++
++
++# ---------------------------------------------------------------------------
++# GMRES
++# ---------------------------------------------------------------------------
++def gmres_solve(matvec, precond, b, x0, rtol, maxit, restart=200):
++    """Left-preconditioned GMRES, restarted every ``restart`` matvecs.
++
++    Left preconditioning is deliberate: ``M`` approximates ``(I - G)^{-1}``,
++    so ``||M r||`` estimates the *error* rather than the residual, and
++    stopping on it is stopping on the quantity the benchmark grades.
++
++    The Krylov basis is grown geometrically instead of being sized for
++    ``maxit``, which on the shipped cases is ``TMAX = 30000``: nothing here
++    ever needs more than a few tens of vectors, and reserving room for thirty
++    thousand of them would cost more memory than the whole solver.
++
++    Returns ``(x, residuals, converged)``; ``residuals`` are relative
++    preconditioned residual norms, one per matvec performed.
++    """
++    n = b.size
++    ref = float(np.linalg.norm(precond(b)))
++    residuals = []
++    x = np.array(x0, dtype=float, copy=True)
++    if ref == 0.0:
++        return x, residuals, True
++
++    used = 0
++    while used < maxit:
++        if np.any(x):
++            r = precond(b - matvec(x))
++            used += 1
++        else:
++            r = precond(b)
++        beta = float(np.linalg.norm(r))
++        if beta <= rtol * ref:
++            return x, residuals, True
++        cap = min(restart, maxit - used)
++        if cap <= 0:
++            break
++        V = np.empty((min(cap, 32) + 1, n))
++        H = np.zeros((min(cap, 32) + 1, min(cap, 32)))
++        cs = np.zeros(cap)
++        sn = np.zeros(cap)
++        g = np.zeros(cap + 1)
++        V[0] = r / beta
++        g[0] = beta
++        k = 0
++        converged = False
++        for j in range(cap):
++            if j + 1 >= V.shape[0]:                    # grow, geometrically
++                grow = min(cap, 2 * j) + 1
++                Vn = np.empty((grow + 1, n)); Vn[:V.shape[0]] = V; V = Vn
++                Hn = np.zeros((grow + 1, grow)); Hn[:H.shape[0], :H.shape[1]] = H
++                H = Hn
++            w = precond(matvec(V[j]))
++            used += 1
++            for i in range(j + 1):
++                H[i, j] = V[i] @ w
++                w -= H[i, j] * V[i]
++            # one pass of re-orthogonalisation: the operator is far from normal
++            for i in range(j + 1):
++                corr = V[i] @ w
++                H[i, j] += corr
++                w -= corr * V[i]
++            H[j + 1, j] = float(np.linalg.norm(w))
++            if H[j + 1, j] > 0.0:
++                V[j + 1] = w / H[j + 1, j]
++            for i in range(j):
++                t = cs[i] * H[i, j] + sn[i] * H[i + 1, j]
++                H[i + 1, j] = -sn[i] * H[i, j] + cs[i] * H[i + 1, j]
++                H[i, j] = t
++            d = np.hypot(H[j, j], H[j + 1, j])
++            if d == 0.0:
++                cs[j], sn[j] = 1.0, 0.0
++            else:
++                cs[j], sn[j] = H[j, j] / d, H[j + 1, j] / d
++            H[j, j] = cs[j] * H[j, j] + sn[j] * H[j + 1, j]
++            H[j + 1, j] = 0.0
++            g[j + 1] = -sn[j] * g[j]
++            g[j] = cs[j] * g[j]
++            k = j + 1
++            residuals.append(abs(g[j + 1]) / ref)
++            if residuals[-1] <= rtol:
++                converged = True
++                break
++        if k:
++            yk = np.linalg.solve(np.triu(H[:k, :k]), g[:k])
++            x = x + V[:k].T @ yk
++        if converged:
++            return x, residuals, True
++        if k == 0:
++            break
++    return x, residuals, False
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/config.py solution/pybte/config.py
+--- environment/pybte/config.py	2026-09-08 16:38:19.803932568 +0800
++++ solution/pybte/config.py	2026-09-10 05:34:41.280076501 +0800
+@@ -52,9 +52,13 @@
+ class Scheme:
+     #: 'raise' or 'break' when a direction's sweep graph has a cycle
+     on_cycle: str = "raise"
++    #: Krylov-accelerate the outer iteration (see :mod:`pybte.accel`).  The
++    #: fixed point is unchanged; only the path to it is.  Set False to get
++    #: the original source iteration back.
++    accelerate: bool = True
+ 
+     def __post_init__(self):
+-
++        self.accelerate = bool(self.accelerate)
+         if self.on_cycle not in ("raise", "break"):
+             raise ValueError("scheme.on_cycle must be 'raise' or 'break'")
+ 
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/driver.py solution/pybte/driver.py
+--- environment/pybte/driver.py	2026-09-08 16:38:19.803773568 +0800
++++ solution/pybte/driver.py	2026-09-10 06:35:11.302602503 +0800
+@@ -1,6 +1,6 @@
+ """The outer iteration -- the port of ``Callaway_2D_2V_DG.f90``.
+ 
+-::
++The reference loop is::
+ 
+     STEP = 1
+     DO
+@@ -10,10 +10,20 @@
+         EXIT when RESIDUAL < TOL or STEP >= TMAX
+     END DO
+ 
+-Nothing about that structure changes in the port.  What is added around it:
+-an explicit restart contract, an optional true residual, and a
+-:class:`~pybte.io_output.RunRecord` complete enough that a verifier never has
+-to parse stdout.
++which is Richardson iteration on the fixed point ``y = G y + g`` in the
++macroscopic unknowns.  It is kept verbatim as
++:meth:`Solver.run_source_iteration`, and one pass of it is
++:meth:`Solver.step`, but it is not what :meth:`Solver.run` does: Richardson's
++contraction factor is ``1 - O((Vg tau_C k)^2)``, so on the optically thick
++cases it needs upwards of a million sweeps.  :meth:`Solver.run` gives the
++same system to the diffusion-preconditioned GMRES in :mod:`pybte.accel`
++instead -- still one transport sweep per matvec, still the same fixed point,
++but reached in a couple of dozen sweeps at every ``(tau_R, tau_N)`` in the
++benchmark.
++
++Also added around the loop: an explicit restart contract, an optional true
++residual, and a :class:`~pybte.io_output.RunRecord` complete enough that a
++verifier never has to parse stdout.
+ """
+ from __future__ import annotations
+ 
+@@ -121,8 +131,12 @@
+         arr = np.frombuffer(raw, dtype="<f8").reshape(
+             (self.ndof, self.n_tris, self.case.velmesh.npole,
+              self.case.velmesh.nazim), order="F")
+-        self.vdf = np.ascontiguousarray(
+-            np.transpose(arr, (3, 2, 1, 0)).reshape(self.ndir, self.n_tris, self.ndof))
++        # np.frombuffer gives a read-only array, and the transpose+reshape
++        # below is a view of it, so this has to be a copy: the sweep writes
++        # into VDF in place.
++        self.vdf = np.array(
++            np.transpose(arr, (3, 2, 1, 0)).reshape(self.ndir, self.n_tris, self.ndof),
++            dtype=np.float64, order="C", copy=True)
+         return {"enabled": True, "path": str(path),
+                 "sha256": hashlib.sha256(raw).hexdigest()}
+ 
+@@ -153,6 +167,115 @@
+ 
+     # -- the outer loop -----------------------------------------------------
+     def run(self, callback=None, progress_every: int = 0) -> RunRecord:
++        """Solve the discrete transport system to the fixed point.
++
++        The fixed point is the same one ``Calculate_Residual_T < tol`` was
++        aiming at; how it is reached is not.  Source iteration is Richardson
++        on ``(I - G) y = g`` in the macroscopic unknowns, and it stalls once
++        the medium is optically thick.  :mod:`pybte.accel` hands the same
++        system to a diffusion-preconditioned GMRES instead, one sweep per
++        matvec.  ``run_source_iteration`` keeps the original loop for
++        comparison, and is used as a fallback.
++        """
++        c = self.case
++        if c.iteration.tmax < 4 or not self.case.scheme.accelerate:
++            return self.run_source_iteration(callback, progress_every)
++        try:
++            return self._run_krylov(callback, progress_every)
++        except (ImportError, np.linalg.LinAlgError, RuntimeError) as exc:  # pragma: no cover
++            warnings.warn(f"Krylov acceleration unavailable ({exc}); "
++                          "falling back to source iteration")
++            return self.run_source_iteration(callback, progress_every)
++
++    def _run_krylov(self, callback=None, progress_every: int = 0) -> RunRecord:
++        from . import accel
++        from .accel import DSAPreconditioner, MomentSystem, gmres_solve
++
++        c = self.case
++        tol, tmax = c.iteration.tol, c.iteration.tmax
++        t0 = time.perf_counter()
++
++        ms = MomentSystem(self)
++        pre = DSAPreconditioner(self)
++
++        # a restart file gives a starting state; otherwise start from zero
++        x0 = np.zeros(ms.n)
++        if np.any(self.vdf):
++            if self.bcdata.has_nonthermalising:
++                self.bcdata.update_wall_flux(self.vdf, self.ctx.cxv, self.ctx.cyv,
++                                             self.ctx.domega,
++                                             self.integrals.int_tri_fc, self.mesh)
++            compute_moments(self.vdf, self.ctx.cxv, self.ctx.cyv, self.ctx.domega,
++                            self.integrals.int_tri, c.flow.cv, self.mom)
++            x0 = ms.pack_current()
++
++        masses: list[float] = []
++
++        def phi(y):
++            out = ms.apply(y)
++            masses.append(self.mom.mass)
++            if progress_every and ms.sweeps % progress_every == 0:
++                print(f"  sweep {ms.sweeps:6d}  mass {self.mom.mass:.10f}", flush=True)
++            return out
++
++        g = phi(np.zeros(ms.n))
++
++        def matvec(y):
++            return y - (phi(y) - g)
++
++        # a hundredth of the stopping tolerance, but never below the level
++        # where the preconditioned residual bottoms out in round-off
++        rtol = min(accel.KRYLOV_RTOL, max(1.0e-13, 1.0e-2 * tol))
++        maxit = tmax - 2
++        y, res_hist, ok = gmres_solve(matvec, pre.apply, g, x0, rtol, maxit)
++
++        # one last sweep so that the VDF is the exact transport solve of the
++        # converged moments: that is what the residual gate is computed from
++        t_before = np.einsum("li,li->i", ms.unpack(y)[0], self.integrals.int_tri)
++        phi(y)
++        # Calculate_Residual_T divides by ||T||, which is 0/0 when every wall
++        # is cold -- a legitimate solution, so call it converged rather than
++        # letting the kernel divide by zero
++        res = (residual_iterate(self.mom.temp, t_before)
++               if np.any(self.mom.temp) else 0.0)
++        self.t_old[:] = self.mom.temp
++
++        residuals = list(res_hist) + [res]
++        if callback is not None:
++            callback(ms.sweeps, res, self)
++        converged = bool(res < tol)
++        krylov_sweeps = ms.sweeps
++
++        # Safety net.  GMRES has never needed it on any of the shipped cases,
++        # but if the preconditioner were to mislead it on some other one the
++        # answer must still be right: spend whatever is left of TMAX on plain
++        # source iteration rather than return a half-solved field.
++        while not converged and ms.sweeps < tmax:
++            self.step()
++            ms.sweeps += 1
++            res = residual_iterate(self.mom.temp, self.t_old)
++            self.t_old[:] = self.mom.temp
++            residuals.append(res)
++            masses.append(self.mom.mass)
++            if callback is not None:
++                callback(ms.sweeps, res, self)
++            converged = bool(res < tol)
++
++        true_res = None
++        if c.iteration.true_residual:
++            true_res = [self.ctx.true_residual(self.mom, self.vdf)]
++        if self.ctx.mode == "onthefly":
++            # the fallback loop goes through step(), which counts its own
++            self.factorisation_count += krylov_sweeps * self.ndir * self.n_tris
++        wall = time.perf_counter() - t0
++        rec = self._record(ms.sweeps, converged, residuals, masses, true_res, wall,
++                           scheme="DSA-GMRES")
++        rec.diagnostics["gmres_iterations"] = len(res_hist)
++        rec.diagnostics["gmres_converged"] = bool(ok)
++        rec.diagnostics["preconditioner"] = "coupled" if pre.coupled else "decoupled"
++        return rec
++
++    def run_source_iteration(self, callback=None, progress_every: int = 0) -> RunRecord:
+         """Source iteration: ``Calculate_Residual_T < tol``, as the Fortran."""
+         c = self.case
+         tol, tmax = c.iteration.tol, c.iteration.tmax
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/integration.py solution/pybte/integration.py
+--- environment/pybte/integration.py	2026-09-05 12:17:48.504734452 +0800
++++ solution/pybte/integration.py	2026-09-10 05:48:38.087210298 +0800
+@@ -77,9 +77,13 @@
+ 
+ 
+ def _powf(x, e):
+-    """``x ** float(e)`` with the Fortran's libm semantics."""
+-    import math
++    """``x ** float(e)`` with the Fortran's libm semantics.
+ 
++    ``np.float_power`` dispatches straight to libm ``pow`` without numpy's
++    integral-exponent shortcut, so it agrees with ``math.pow`` bit for bit --
++    checked over the whole exponent range this module uses -- while staying
++    a single vectorised call.
++    """
+     if not EXACT_POW:
+         return np.power(x, float(e))
+     x = np.asarray(x, dtype=float)
+@@ -87,10 +91,7 @@
+         return np.ones_like(x)
+     if e == 1:
+         return x.copy()
+-    flat = x.ravel()
+-    out = np.fromiter((math.pow(v, float(e)) for v in flat),
+-                      dtype=np.float64, count=flat.size)
+-    return out.reshape(x.shape)
++    return np.float_power(x, float(e))
+ 
+ 
+ def _eval_mono(nodfun, mono, xi, eta):
+@@ -344,7 +345,61 @@
+     bc_yoff = np.asarray(bc_yoff) if bc_yoff is not None else np.zeros(0)
+ 
+     int_tri_tri_fc = np.zeros((n_tris, 3, ndof_tri, ndof_tri))
+-    for i in range(n_tris):
++    has_periodic = bool(bc_codes.size and np.any(bc_codes == BC_PERIODIC))
++    if not has_periodic:
++        # Vectorised over elements.  Every operation below is the elementwise
++        # twin of the per-element loop kept in the ``else`` branch, applied to
++        # a leading element axis, so the tensors come out bit-identical --
++        # ``_eval_mono`` still accumulates monomial by monomial and ``_powf``
++        # still goes through libm ``pow``.  It is the *per-call* overhead of
++        # 1200 tiny numpy calls that this removes, and with it two thirds of
++        # the solver's setup time.
++        (bA, cA, dA), (fE, gE, hE) = _affine_to_reference(x, y)
++        tri_ids = np.arange(n_tris)
++        for j2 in range(3):
++            fcid = mesh.tri_faces[:, j2]
++            ln = mesh.face_len[fcid]
++            absc, weig = face_rule(ln)                 # (n_tris, np_fc)
++            fx1 = nodes[mesh.face_nodes[fcid, 0], 0]
++            fy1 = nodes[mesh.face_nodes[fcid, 0], 1]
++            fx2 = nodes[mesh.face_nodes[fcid, 1], 0]
++            fy2 = nodes[mesh.face_nodes[fcid, 1], 1]
++            xp = ((fx2 - fx1) / ln)[:, None] * absc + fx1[:, None]
++            yp = ((fy2 - fy1) / ln)[:, None] * absc + fy1[:, None]
++            pm = _eval_mono(C, mono,
++                            bA[:, None] * xp + cA[:, None] * yp + dA[:, None],
++                            fE[:, None] * xp + gE[:, None] * yp + hE[:, None])
++
++            inner = mesh.face_bc[fcid] < 0
++            t1 = mesh.face_tri[fcid, 0]
++            t2 = mesh.face_tri[fcid, 1]
++            other = np.where(t1 == tri_ids, t2, t1)
++
++            sel = np.flatnonzero(inner)
++            if sel.size:
++                xo = nodes[mesh.tri_nodes[other[sel]], 0]
++                yo = nodes[mesh.tri_nodes[other[sel]], 1]
++                (b2, c2, d2), (f2, g2, h2) = _affine_to_reference(xo, yo)
++                pl = _eval_mono(C, mono,
++                                b2[:, None] * xp[sel] + c2[:, None] * yp[sel] + d2[:, None],
++                                f2[:, None] * xp[sel] + g2[:, None] * yp[sel] + h2[:, None])
++                acc = np.zeros((sel.size, ndof_tri, ndof_tri))
++                pms = pm[sel]
++                ws = weig[sel]
++                for q in range(np_fc):
++                    acc += (pms[:, q, :, None] * pl[:, q, None, :]) * ws[:, q, None, None]
++                int_tri_tri_fc[sel, j2] = acc
++
++            bsel = np.flatnonzero(~inner)
++            if bsel.size:
++                accb = np.zeros((bsel.size, ndof_tri))
++                pmb = pm[bsel]
++                wb = weig[bsel]
++                for q in range(np_fc):
++                    accb += pmb[:, q, :] * wb[:, q, None]
++                int_tri_tri_fc[bsel, j2] = accb[:, :, None]
++    else:
++      for i in range(n_tris):
+         for j2 in range(3):
+             fcid = int(mesh.tri_faces[i, j2])
+             bc = int(mesh.face_bc[fcid])
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/tests/integration/test_acceleration.py solution/tests/integration/test_acceleration.py
+--- environment/tests/integration/test_acceleration.py	1970-01-01 08:00:00.000000000 +0800
++++ solution/tests/integration/test_acceleration.py	2026-09-10 06:22:05.087426325 +0800
+@@ -0,0 +1,99 @@
++"""The accelerated outer iteration must land on the reference fixed point.
++
++Gate: whatever ``Solver.run`` does between sweeps, the distribution it stops
++at has to satisfy the *same* discrete transport system that source iteration
++is converging towards, to round-off and not to the stopping tolerance.  A
++preconditioner that quietly damped the physics, or a stopping rule that
++measured the wrong thing, would show up here and nowhere else.
++"""
++from __future__ import annotations
++
++import numpy as np
++import pytest
++
++from pybte import Case, Solver
++from pybte.accel import MomentSystem
++from pybte.moments import compute_moments
++
++from ..conftest import CASES
++
++
++def _case(name, **flow):
++    c = Case.from_yaml(CASES / name)
++    c.output.field = c.output.run_record = c.output.runtime_log = False
++    c.velmesh.npole, c.velmesh.nazim = 6, 8
++    c.dg.deg = 1
++    for k, v in flow.items():
++        setattr(c.flow, k, v)
++    return c
++
++
++def test_matches_source_iteration():
++    """Same answer as the loop it replaces, on a case the loop can finish."""
++    fast = Solver(_case("kn_1e-3.yaml", tau_r=0.1)).run()
++
++    slow_case = _case("kn_1e-3.yaml", tau_r=0.1)
++    slow_case.scheme.accelerate = False
++    slow_case.iteration.tol = 1.0e-14
++    slow_case.iteration.tmax = 200_000
++    slow = Solver(slow_case).run()
++
++    assert fast.converged and slow.converged
++    assert fast.iterations < slow.iterations / 5
++    rel = np.abs(fast.temp - slow.temp) / np.abs(slow.temp).max()
++    assert rel.max() < 1e-9, f"worst element off by {rel.max():.3e}"
++
++
++@pytest.mark.parametrize("tau_r", [1.0e-3, 10.0])
++def test_converged_vdf_solves_the_transport_system(tau_r):
++    """``||A f - b|| / ||b||`` from the shipped kernels, not from our own
++    stopping criterion.  ``tau_R = 1e-3`` is the thick end, ``tau_R = 10``
++    with ``tau_N = 1e-2`` the hydrodynamic one."""
++    c = _case("kn_1e-3.yaml", tau_r=tau_r, tau_n=1.0e-2 if tau_r > 1 else 1.0e5)
++    s = Solver(c)
++    rec = s.run()
++    assert rec.converged
++    assert s.ctx.true_residual(s.mom, s.vdf) < 1e-9
++
++
++def test_fixed_point_is_stationary_under_one_more_sweep():
++    """G2: ``ctx.sweep(mom, vdf)`` still works, and at the answer it is the
++    identity -- which is what "converged" is supposed to mean."""
++    s = Solver(_case("kn_1e-3.yaml", tau_r=1.0e-3))
++    rec = s.run()
++    before = rec.temp.copy()
++    s.ctx.sweep(s.mom, s.vdf)
++    compute_moments(s.vdf, s.ctx.cxv, s.ctx.cyv, s.ctx.domega,
++                    s.integrals.int_tri, s.case.flow.cv, s.mom)
++    rel = np.abs(s.mom.temp - before) / np.abs(before).max()
++    assert rel.max() < 1e-10
++
++
++def test_moment_map_is_affine():
++    """The acceleration is only legitimate because one sweep is an affine
++    function of the moments.  If it ever stops being one -- a broken sweep
++    cycle, say -- GMRES would be solving a system that does not exist."""
++    s = Solver(_case("kn_1e-3.yaml", tau_r=0.5))
++    ms = MomentSystem(s)
++    rng = np.random.default_rng(7)
++    a = rng.normal(size=ms.n)
++    b = rng.normal(size=ms.n)
++
++    g = ms.apply(np.zeros(ms.n)).copy()
++    ga = ms.apply(a) - g
++    gb = ms.apply(b) - g
++    gab = ms.apply(a + b) - g
++    scale = np.abs(gab).max()
++    assert np.abs(gab - (ga + gb)).max() < 1e-11 * scale
++
++
++def test_reflecting_wall_state_round_trips():
++    """The diffuse-wall unknown is carried as a departure from the local
++    blackbody value; packing and unpacking it must be the identity."""
++    c = _case("kn_1e-3.yaml", tau_r=0.5)
++    c.boundaries[2].type = c.boundaries[3].type = "nonthermalising"
++    s = Solver(c)
++    ms = MomentSystem(s)
++    assert ms.nw > 0
++    y = ms.apply(np.zeros(ms.n)).copy()
++    assert np.array_equal(ms.pack_current(), y)
