@@ -78,7 +78,7 @@ def make_sandbox(task: Path, root: Path, trial: int) -> Path:
 def run_agent_dir(box: Path, prompt: str, args) -> dict:
     cmd = [
         "claude", "-p", prompt,
-        "--output-format", "json",
+        "--output-format", "stream-json", "--verbose",
         "--model", args.model,
         "--dangerously-skip-permissions",
     ]
@@ -102,7 +102,7 @@ def run_agent_docker(box: Path, prompt: str, args) -> dict:
         "-e", "OPENBLAS_NUM_THREADS=1", "-e", "NUMBA_NUM_THREADS=1",
         "-e", "PYTHONHASHSEED=0",
         args.image,
-        "claude", "-p", prompt, "--output-format", "json",
+        "claude", "-p", prompt, "--output-format", "stream-json", "--verbose",
         "--model", args.model, "--dangerously-skip-permissions",
     ]
     if args.max_turns:
@@ -111,6 +111,30 @@ def run_agent_docker(box: Path, prompt: str, args) -> dict:
     out = subprocess.run(cmd, capture_output=True, text=True, timeout=args.timeout)
     return {"wall": time.perf_counter() - t0, "returncode": out.returncode,
             "stdout": out.stdout, "stderr": out.stderr[-4000:]}
+
+
+def parse_stream(stdout: str) -> dict:
+    """The last ``result`` event of a stream-json transcript, or what there is.
+
+    With ``--output-format json`` a run killed at the cap left nothing behind;
+    the stream keeps every event up to the kill, and the final event -- when
+    the run finishes -- carries turns, cost and duration.
+    """
+    meta = {"events": 0, "result_event": False}
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        meta["events"] += 1
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        if d.get("type") == "result":
+            meta.update({k: d.get(k) for k in ("num_turns", "total_cost_usd", "duration_ms",
+                                               "is_error", "subtype", "result")})
+            meta["result_event"] = True
+    return meta
 
 
 def archive_solution(task: Path, box: Path, out_dir: Path, trial: int) -> None:
@@ -199,7 +223,10 @@ def main(argv=None) -> int:
                 return b.decode(errors="replace") if isinstance(b, bytes) else (b or "")
             agent = {"wall": args.timeout, "returncode": -1, "timed_out": True,
                      "stdout": _txt(e.stdout), "stderr": "timeout\n" + _txt(e.stderr)[-4000:]}
-        (out_dir / f"trial_{i:02d}_transcript.json").write_text(agent["stdout"] or "")
+        (out_dir / f"trial_{i:02d}_transcript.jsonl").write_text(agent["stdout"] or "")
+        meta = parse_stream(agent["stdout"] or "")
+        meta["timed_out"] = bool(agent.get("timed_out"))
+        (out_dir / f"trial_{i:02d}_meta.json").write_text(json.dumps(meta, indent=2))
         if agent["stderr"]:
             (out_dir / f"trial_{i:02d}_stderr.txt").write_text(agent["stderr"])
 
@@ -211,6 +238,8 @@ def main(argv=None) -> int:
         rows.append({"trial": i, "gate": bool(res.get("gate")), "score": res.get("score"),
                      "families": fam, "cells_passed": n, "cells": len(cells),
                      "agent_wall": agent["wall"], "timed_out": bool(agent.get("timed_out")),
+                     "turns": meta.get("num_turns"), "cost_usd": meta.get("total_cost_usd"),
+                     "events": meta.get("events"),
                      "agent_returncode": agent["returncode"],
                      "sandbox": str(box)})
         sc = f"{res['score']:.1f}x" if res.get("score") else "-"
