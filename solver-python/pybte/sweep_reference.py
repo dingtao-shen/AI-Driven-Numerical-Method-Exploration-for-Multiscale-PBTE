@@ -66,6 +66,10 @@ def sweep_reference(ctx, mom, vdf) -> None:
                 fc = int(ctx.tri_faces[i, il])
                 bc = int(ctx.face_bc[fc])
                 if bc < 0 or ctx.bc_type[bc] == 3:
+                    if bc >= 0 and ctx.use_pbuf:
+                        for l in range(nd):
+                            src -= (w * ctx.ttfc[i, il, :, l]) * ctx.pbuf[d, fc, l]
+                        continue
                     iext = (int(ctx.neighbour[i, il]) if bc < 0
                             else int(ctx.periodic_tri[fc]))
                     for l in range(nd):

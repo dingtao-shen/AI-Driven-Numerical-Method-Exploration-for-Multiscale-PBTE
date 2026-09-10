@@ -5,13 +5,14 @@ transport equation on a square: nodal discontinuous Galerkin in space,
 discrete ordinates in angle, and an outer iteration that alternates a
 transport sweep with a moment update.
 
-Ten cases in `cases/` cover two boundary-condition families on the same
-square and the same discretisation, each at five `(tau_R, tau_N)` pairs:
+Fifteen cases in `cases/` cover three boundary-condition families on the
+same square and the same discretisation, each at five `(tau_R, tau_N)` pairs:
 
 | family | walls | cases |
 |---|---|---|
 | `F1_*` | all four isothermal, `T = 1` on the north wall | five |
 | `F2_*` | east and west diffusely reflecting (adiabatic), north hot, south cold | five |
+| `F3_*` | east and west periodic, north hot, south cold | five |
 
 The five pairs span the diffusive, transition, ballistic and hydrodynamic
 regimes of the dual-relaxation-time model. The solver handles some of them
@@ -25,7 +26,7 @@ converges to where it can — and make it fast.**
 
 Grading has two parts: gates, which every case must pass, and a score.
 
-**Gates** (all ten cases):
+**Gates** (all fifteen cases):
 
 1. **It converges** inside its own `tmax`.
 2. **The converged distribution solves the discrete transport system.** The

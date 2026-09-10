@@ -17,19 +17,20 @@ new_files:
     \                 # exact transport solve, one direction at a time,\n                                # in a topological\
     \ order of the element graph\n        compute_moments()       # T, qx, qy from the distribution\n        if residual <\
     \ tol: break\n\nThe sweep is Gauss-Seidel: within a direction each element reads inflow from\nneighbours already updated\
-    \ in the same pass, which is what makes it an exact\nsolve for that direction.\n\n## Cases\n\nTwo boundary-condition families\
-    \ on the same square and the same\ndiscretisation (200 elements, `DEG = 2`, a `10 x 20` angular mesh,\n`tol = 1e-8`),\
-    \ each at five `(tau_R, tau_N)` pairs spanning the diffusive,\ntransition, ballistic and hydrodynamic regimes:\n\n   \
-    \ F1_*   all four walls isothermal, T = 1 on the north wall\n    F2_*   east and west walls diffusely reflecting (adiabatic)\n\
-    \nA diffusely reflecting wall re-emits, isotropically, the energy that hits\nit, so its emission depends on the solution:\
-    \ `bc.py` recomputes it from the\ndistribution at the start of every iteration.\n\n## Layout\n\n    pybte/          the\
-    \ solver\n      driver.py     the outer iteration\n      sweep.py      the transport sweep\n      moments.py    moments\
-    \ and the residual\n      basis.py      nodal DG bases\n      quadrature.py Gauss-Legendre and triangle rules\n      bc.py\
-    \         boundary conditions\n      mesh/         gmsh reader, topology, geometry\n      analytic.py   the diffusion-limit\
-    \ series\n    cases/          case files\n    meshes/         gmsh meshes\n    tests/          pytest suite\n\n## Notes\n\
-    \n* `Temp`, `Qx`, `Qy` on the run record are element *integrals*, not averages:\n  `record.temp.sum()` is the domain integral\
-    \ of `T`.  Divide by\n  `mesh.tri_area` for cell averages.\n* `NAZIM` is silently forced even.\n* The angular quadrature\
-    \ is accurate to about `1e-13`, not to machine\n  precision; do not design a test that needs better.\n"
+    \ in the same pass, which is what makes it an exact\nsolve for that direction.\n\n## Cases\n\nThree boundary-condition\
+    \ families on the same square and the same\ndiscretisation (200 elements, `DEG = 2`, a `10 x 20` angular mesh,\n`tol =\
+    \ 1e-8`), each at five `(tau_R, tau_N)` pairs spanning the diffusive,\ntransition, ballistic and hydrodynamic regimes:\n\
+    \n    F1_*   all four walls isothermal, T = 1 on the north wall\n    F2_*   east and west walls diffusely reflecting (adiabatic)\n\
+    \    F3_*   east and west walls periodic (the mesh's two side boundaries are\n           paired; `bc.py` matches their\
+    \ faces)\n\nA diffusely reflecting wall re-emits, isotropically, the energy that hits\nit, so its emission depends on\
+    \ the solution: `bc.py` recomputes it from the\ndistribution at the start of every iteration.\n\n## Layout\n\n    pybte/\
+    \          the solver\n      driver.py     the outer iteration\n      sweep.py      the transport sweep\n      moments.py\
+    \    moments and the residual\n      basis.py      nodal DG bases\n      quadrature.py Gauss-Legendre and triangle rules\n\
+    \      bc.py         boundary conditions\n      mesh/         gmsh reader, topology, geometry\n      analytic.py   the\
+    \ diffusion-limit series\n    cases/          case files\n    meshes/         gmsh meshes\n    tests/          pytest\
+    \ suite\n\n## Notes\n\n* `Temp`, `Qx`, `Qy` on the run record are element *integrals*, not averages:\n  `record.temp.sum()`\
+    \ is the domain integral of `T`.  Divide by\n  `mesh.tri_area` for cell averages.\n* `NAZIM` is silently forced even.\n\
+    * The angular quadrature is accurate to about `1e-13`, not to machine\n  precision; do not design a test that needs better.\n"
   cases/F1_1e-3.yaml: "# Isothermal square: T = 1 on the north wall, 0 on the other three.  Kn_R = 0.001, Kn_N = 100000.\n\
     iteration:  {tol: 1.0e-8, tmax: 30000, true_residual: false}\nvelmesh:    {npole: 10, nazim: 20}\ndg:         {deg: 2}\n\
     flow:       {cv: 1.0, vg: 1.0, tau_r: 0.001, tau_n: 100000}\nmesh:       {file: ../meshes/A1_Nx11_Ny11.msh}\nboundaries:\n\
@@ -98,6 +99,41 @@ new_files:
     boundaries:\n  - {name: SWall, phyid: 11, type: thermalising,    temp: 0.0}\n  - {name: NWall, phyid: 12, type: thermalising,\
     \    temp: 1.0}\n  - {name: EWall, phyid: 13, type: nonthermalising, temp: 0.0}\n  - {name: WWall, phyid: 14, type: nonthermalising,\
     \ temp: 0.0}\nrestart:    {enabled: false, path: null}\noutput:     {dir: ../out/F2_10_1e-2, field: false, runtime_log:\
+    \ false, run_record: true}\n"
+  cases/F3_1e-3.yaml: "# Square with periodic east and west walls; T = 1 north, 0 south.  Kn_R = 0.001, Kn_N = 100000.\niteration:\
+    \  {tol: 1.0e-8, tmax: 30000, true_residual: false}\nvelmesh:    {npole: 10, nazim: 20}\ndg:         {deg: 2}\nflow: \
+    \      {cv: 1.0, vg: 1.0, tau_r: 0.001, tau_n: 100000}\nmesh:       {file: ../meshes/C1_Nx11_Ny11.msh}\nboundaries:\n\
+    \  - {name: SWall,  phyid: 11, type: thermalising, temp: 0.0}\n  - {name: NWall,  phyid: 12, type: thermalising, temp:\
+    \ 1.0}\n  - {name: Master, phyid: 13, type: periodic, temp: 0.0, xoff: -1.0}\n  - {name: Slave,  phyid: 14, type: periodic,\
+    \ temp: 0.0, xoff:  1.0}\nrestart:    {enabled: false, path: null}\noutput:     {dir: ../out/F3_1e-3, field: false, runtime_log:\
+    \ false, run_record: true}\n"
+  cases/F3_1e-2.yaml: "# Square with periodic east and west walls; T = 1 north, 0 south.  Kn_R = 0.01, Kn_N = 100000.\niteration:\
+    \  {tol: 1.0e-8, tmax: 30000, true_residual: false}\nvelmesh:    {npole: 10, nazim: 20}\ndg:         {deg: 2}\nflow: \
+    \      {cv: 1.0, vg: 1.0, tau_r: 0.01, tau_n: 100000}\nmesh:       {file: ../meshes/C1_Nx11_Ny11.msh}\nboundaries:\n \
+    \ - {name: SWall,  phyid: 11, type: thermalising, temp: 0.0}\n  - {name: NWall,  phyid: 12, type: thermalising, temp:\
+    \ 1.0}\n  - {name: Master, phyid: 13, type: periodic, temp: 0.0, xoff: -1.0}\n  - {name: Slave,  phyid: 14, type: periodic,\
+    \ temp: 0.0, xoff:  1.0}\nrestart:    {enabled: false, path: null}\noutput:     {dir: ../out/F3_1e-2, field: false, runtime_log:\
+    \ false, run_record: true}\n"
+  cases/F3_1e-1.yaml: "# Square with periodic east and west walls; T = 1 north, 0 south.  Kn_R = 0.1, Kn_N = 100000.\niteration:\
+    \  {tol: 1.0e-8, tmax: 30000, true_residual: false}\nvelmesh:    {npole: 10, nazim: 20}\ndg:         {deg: 2}\nflow: \
+    \      {cv: 1.0, vg: 1.0, tau_r: 0.1, tau_n: 100000}\nmesh:       {file: ../meshes/C1_Nx11_Ny11.msh}\nboundaries:\n  -\
+    \ {name: SWall,  phyid: 11, type: thermalising, temp: 0.0}\n  - {name: NWall,  phyid: 12, type: thermalising, temp: 1.0}\n\
+    \  - {name: Master, phyid: 13, type: periodic, temp: 0.0, xoff: -1.0}\n  - {name: Slave,  phyid: 14, type: periodic, temp:\
+    \ 0.0, xoff:  1.0}\nrestart:    {enabled: false, path: null}\noutput:     {dir: ../out/F3_1e-1, field: false, runtime_log:\
+    \ false, run_record: true}\n"
+  cases/F3_1_1.yaml: "# Square with periodic east and west walls; T = 1 north, 0 south.  Kn_R = 1, Kn_N = 1.\niteration: \
+    \ {tol: 1.0e-8, tmax: 30000, true_residual: false}\nvelmesh:    {npole: 10, nazim: 20}\ndg:         {deg: 2}\nflow:  \
+    \     {cv: 1.0, vg: 1.0, tau_r: 1, tau_n: 1}\nmesh:       {file: ../meshes/C1_Nx11_Ny11.msh}\nboundaries:\n  - {name:\
+    \ SWall,  phyid: 11, type: thermalising, temp: 0.0}\n  - {name: NWall,  phyid: 12, type: thermalising, temp: 1.0}\n  -\
+    \ {name: Master, phyid: 13, type: periodic, temp: 0.0, xoff: -1.0}\n  - {name: Slave,  phyid: 14, type: periodic, temp:\
+    \ 0.0, xoff:  1.0}\nrestart:    {enabled: false, path: null}\noutput:     {dir: ../out/F3_1_1, field: false, runtime_log:\
+    \ false, run_record: true}\n"
+  cases/F3_10_1e-2.yaml: "# Square with periodic east and west walls; T = 1 north, 0 south.  Kn_R = 10, Kn_N = 0.01.\niteration:\
+    \  {tol: 1.0e-8, tmax: 30000, true_residual: false}\nvelmesh:    {npole: 10, nazim: 20}\ndg:         {deg: 2}\nflow: \
+    \      {cv: 1.0, vg: 1.0, tau_r: 10, tau_n: 0.01}\nmesh:       {file: ../meshes/C1_Nx11_Ny11.msh}\nboundaries:\n  - {name:\
+    \ SWall,  phyid: 11, type: thermalising, temp: 0.0}\n  - {name: NWall,  phyid: 12, type: thermalising, temp: 1.0}\n  -\
+    \ {name: Master, phyid: 13, type: periodic, temp: 0.0, xoff: -1.0}\n  - {name: Slave,  phyid: 14, type: periodic, temp:\
+    \ 0.0, xoff:  1.0}\nrestart:    {enabled: false, path: null}\noutput:     {dir: ../out/F3_10_1e-2, field: false, runtime_log:\
     \ false, run_record: true}\n"
 patch:
 - file: pybte/config.py

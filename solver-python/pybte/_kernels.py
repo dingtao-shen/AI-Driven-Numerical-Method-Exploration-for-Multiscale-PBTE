@@ -170,8 +170,17 @@ def _fill_a_src(src, i, cxd, cyd, cv, vg, tau_r, tau_n, pi,
 @njit(cache=True, inline="always")
 def _add_face_sources(src, i, d, cxd, cyd, cv, pi,
                       ttfc, nx, ny, tri_faces, face_bc, neighbour,
-                      periodic_tri, bc_type, bc_temp, flux_wall, vdf):
-    """Upwind inflow, dispatching on the boundary type."""
+                      periodic_tri, bc_type, bc_temp, flux_wall, vdf,
+                      pbuf, use_pbuf):
+    """Upwind inflow, dispatching on the boundary type.
+
+    ``pbuf[d, fc, :]`` is an externally supplied periodic inflow (the partner
+    element's DOFs); with ``use_pbuf`` the periodic branch reads it instead of
+    the partner's current ``vdf``.  That is what makes one sweep an exact
+    function of an explicit state when periodic faces are present: the
+    partner is not necessarily upwind in the sweep order, so reading its
+    ``vdf`` would read a lagged value.  Source iteration never sets the
+    flag, so its behaviour is untouched."""
     nd = src.shape[0]
     for il in range(3):
         speed = cxd * nx[i, il] + cyd * ny[i, il]
@@ -191,7 +200,10 @@ def _add_face_sources(src, i, d, cxd, cyd, cv, pi,
             if typ == 3:
                 iext = periodic_tri[fc]
                 for l in range(nd):
-                    fl = vdf[d, iext, l]
+                    if use_pbuf:
+                        fl = pbuf[d, fc, l]
+                    else:
+                        fl = vdf[d, iext, l]
                     for m in range(nd):
                         src[m] -= (w * ttfc[i, il, m, l]) * fl
             elif typ == 2:
@@ -207,7 +219,7 @@ def _add_face_sources(src, i, d, cxd, cyd, cv, pi,
 def sweep_precomputed(order, cxv, cyv, cv, vg, tau_r, tau_n, pi,
                       mass, ttfc, nx, ny, tri_faces, face_bc, neighbour,
                       periodic_tri, bc_type, bc_temp, flux_wall,
-                      ts, qxs, qys, lu, piv, vdf):
+                      ts, qxs, qys, lu, piv, vdf, pbuf, use_pbuf):
     """One transport sweep using pre-factorised element operators."""
     ndir = cxv.shape[0]
     n_tris = order.shape[1]
@@ -221,7 +233,7 @@ def sweep_precomputed(order, cxv, cyv, cv, vg, tau_r, tau_n, pi,
             _fill_a_src(src, i, cxd, cyd, cv, vg, tau_r, tau_n, pi, mass, ts, qxs, qys)
             _add_face_sources(src, i, d, cxd, cyd, cv, pi, ttfc, nx, ny,
                               tri_faces, face_bc, neighbour, periodic_tri,
-                              bc_type, bc_temp, flux_wall, vdf)
+                              bc_type, bc_temp, flux_wall, vdf, pbuf, use_pbuf)
             lu_solve_inplace(lu[d, i], piv[d, i], src)
             for m in range(nd):
                 vdf[d, i, m] = src[m]
@@ -231,7 +243,7 @@ def sweep_precomputed(order, cxv, cyv, cv, vg, tau_r, tau_n, pi,
 def sweep_onthefly(order, cxv, cyv, cv, vg, tau_r, tau_n, tau_c, pi,
                    mass, gx, gy, fcm, ttfc, nx, ny, tri_faces, face_bc,
                    neighbour, periodic_tri, bc_type, bc_temp, flux_wall,
-                   ts, qxs, qys, vdf):
+                   ts, qxs, qys, vdf, pbuf, use_pbuf):
     """One transport sweep, re-factorising ``A_SOL`` exactly as the Fortran
     does.  Slower, but has no ``O(N_TRIS*NDIR*NDOF^2)`` memory cost."""
     ndir = cxv.shape[0]
@@ -250,7 +262,7 @@ def sweep_onthefly(order, cxv, cyv, cv, vg, tau_r, tau_n, tau_c, pi,
             _fill_a_src(src, i, cxd, cyd, cv, vg, tau_r, tau_n, pi, mass, ts, qxs, qys)
             _add_face_sources(src, i, d, cxd, cyd, cv, pi, ttfc, nx, ny,
                               tri_faces, face_bc, neighbour, periodic_tri,
-                              bc_type, bc_temp, flux_wall, vdf)
+                              bc_type, bc_temp, flux_wall, vdf, pbuf, use_pbuf)
             lu_factor_inplace(a, p)
             lu_solve_inplace(a, p, src)
             for m in range(nd):
@@ -264,7 +276,7 @@ def sweep_onthefly(order, cxv, cyv, cv, vg, tau_r, tau_n, tau_c, pi,
 def transport_residual(cxv, cyv, domega, cv, vg, tau_r, tau_n, tau_c, pi,
                        mass, gx, gy, fcm, ttfc, nx, ny, tri_faces, face_bc,
                        neighbour, periodic_tri, bc_type, bc_temp, flux_wall,
-                       ts, qxs, qys, vdf, out_num, out_den):
+                       ts, qxs, qys, vdf, out_num, out_den, pbuf):
     """``||A_SOL f - A_SRC||`` with *no* sweep: a genuine residual of the
     coupled discrete system, zero exactly at the fixed point."""
     ndir = cxv.shape[0]
@@ -283,7 +295,7 @@ def transport_residual(cxv, cyv, domega, cv, vg, tau_r, tau_n, tau_c, pi,
             _fill_a_src(src, i, cxd, cyd, cv, vg, tau_r, tau_n, pi, mass, ts, qxs, qys)
             _add_face_sources(src, i, d, cxd, cyd, cv, pi, ttfc, nx, ny,
                               tri_faces, face_bc, neighbour, periodic_tri,
-                              bc_type, bc_temp, flux_wall, vdf)
+                              bc_type, bc_temp, flux_wall, vdf, pbuf, False)
             for m in range(nd):
                 r = -src[m]
                 for l in range(nd):

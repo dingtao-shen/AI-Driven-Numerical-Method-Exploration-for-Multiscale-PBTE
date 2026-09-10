@@ -1,13 +1,13 @@
 name = "t01-square"
 family = "square-domain-acceleration"
 flagship = true
-version = "0.2.0"
+version = "0.3.0"
 
 summary = """
 A correct but unaccelerated kinetic transport solver on a square degrades by
 orders of magnitude as the medium becomes optically thick or hydrodynamic,
 and stops converging at the stiff end. Deliver an accelerated solver that
-converges to the same discrete fixed point on ten cases -- two wall types,
+converges to the same discrete fixed point on fifteen cases -- three wall types,
 five (tau_R, tau_N) pairs spanning every regime of the dual-relaxation
 model -- and is scored on its speed-up over source iteration.
 """
@@ -16,7 +16,7 @@ tags = ["kinetic-transport", "stiff", "iterative-solvers", "asymptotic-limit",
         "boundary-conditions", "numerical-analysis", "scientific-computing"]
 
 difficulty = "hard"
-families = ["F1", "F2"]
+families = ["F1", "F2", "F3"]
 knudsen_grid = "the five (Kn_R, Kn_N) pairs of the reference publication's 2-D test"
 
 [budgets]
