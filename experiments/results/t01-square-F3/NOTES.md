@@ -18,14 +18,14 @@ iteration, failing the stiff cells.
 | trial | gate | score | F1 / F2 / F3 | min | method (from the archived diff) |
 |---|---|---|---|---|---|
 | 1 | PASS 15/15 | 689x | 747x / 859x / 510x | 120 (cap; solution in place) | GMRES on a state of moments **+ the distribution behind each periodic face + wall emission**, preconditioned by low-order (DSA/MSA-type) operators on the moment block. F3 costs ~2 sweep-equivalents per sweep against ~1.2 on F1: the periodic-trace part of the state is carried but not preconditioned. |
-| 2 | | | | | |
+| 2 | PASS 15/15 | 740x | 810x / 927x / 540x | 120 (cap; solution in place) | Same structure: state = moments + **distribution of the elements behind each periodic pair** + wall emission ("the sweep ordering treats a periodic face as a boundary, so that inflow is lagged"), GMRES preconditioned by a coarse low-order operator (`loworder.py`). F3 again the costliest family (~2.3 sweep-equivalents per sweep). |
 | 3 | | | | | |
 | 4 | | | | | |
 | 5 | | | | | |
 
 ## Observations so far
 
-* **The periodic family did not stop trial 1.** The agent identified exactly
+* **The periodic family did not stop trials 1 or 2.** The agent identified exactly
   what the oracle does — that a periodic face's partner is part of the state
   the sweep reads — and carried it in the Krylov vector. F3 is the costliest
   family for it (510x against 747x / 859x), which the per-family score shows,
