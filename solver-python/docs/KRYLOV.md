@@ -36,12 +36,10 @@ sweep order is topological, so one sweep is an exact block-triangular solve
 and the result depends on the moments and the boundary inflow only. A
 diffusely reflecting wall re-emits what it received, so its emission is
 appended to the state; it is linear in the distribution and the map stays
-affine. Two situations break exactness and make `run()` raise:
-
-* a direction whose sweep graph had a cycle broken (part of the inflow is
-  lagged);
-* periodic faces (the partner element cannot be placed upwind; its outflow
-  is lagged).
+affine. A periodic face's partner cannot always be placed upwind, so its
+outflow is carried in the state too (see Limits). What still breaks
+exactness and makes `run()` raise is a direction whose sweep graph had a
+cycle broken: part of the inflow is lagged with no state to hold it.
 
 ## Stopping and accounting
 
@@ -78,7 +76,11 @@ against > 200 000 / 32 343 / 643 / 75 / 2 444.
   experimental and off: it helps in the diffusive limit and is harmful in
   the ballistic one, and no formulation valid across the whole range has
   been found.
-* **Periodic faces** are not supported; see above.
+* **Periodic faces** are supported by making the partner element's DOFs on
+  every periodic face, for every direction, part of the state
+  (`SweepContext.pbuf`, read by the sweep only on the Krylov path); on the
+  periodic-side square that adds 24 000 entries and costs no extra sweeps
+  (286 at `(0.01, 1e5)` against 281 with reflecting sides).
 
 ## Configuration
 

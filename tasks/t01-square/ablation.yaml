@@ -14,6 +14,7 @@ remove_paths:
 - tests/unit/test_config.py
 - tests/unit/test_defect_correction.py
 - tests/unit/test_interface.py
+- tests/unit/test_krylov.py
 - tools
 new_files:
   README.md: "# Phonon Boltzmann transport solver\n\nSteady 2D2V gray linear Callaway phonon BTE.  Nodal discontinuous Galerkin\
