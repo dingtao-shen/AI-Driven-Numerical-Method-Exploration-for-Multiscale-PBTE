@@ -447,8 +447,13 @@ under the sweep-count rule then in force (spread 3.3x); one trial invalid (accou
 Every valid trial built a physics-based preconditioner for GMRES — three a coarse-angle
 transport operator, one a moment system — reaching near-Knudsen-independent counts of
 6–37 sweeps. The score rule was then changed to sweep-equivalents (§2); the solutions were
-lost to a reboot before they could be re-scored, so a fresh run under the new rule is the
-next measurement. `experiments/results/t01-square/NOTES.md`.
+lost to a reboot before they could be re-scored. **Second k=5 (2026-09-10), final rule** — unit =
+the submission's own single-threaded sweep, capped by the verifier's: **5/5 pass, 548x – 974x**
+(geometric mean 762x, spread 1.8x; oracle 34x). Every trial built a low-order preconditioner for
+GMRES (coarse-angle x3, sparse low-order x1, diffusion-type x1); none touched the sweep kernel,
+which the unit makes pointless; 3/5 hit the 2 h cap with a passing solution in place. An
+intermediate wall-clock-unit rule was tried and withdrawn after one trial spent its budget
+compiling sweep kernels. `experiments/results/t01-square*/NOTES.md`.
 
 ### Phase B — abstraction and tooling (2 weeks)
 

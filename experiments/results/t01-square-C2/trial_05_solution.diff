@@ -1,0 +1,958 @@
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/README.md solution/README.md
+--- environment/README.md	2026-09-08 16:38:19.804116549 +0800
++++ solution/README.md	2026-09-10 11:28:28.021056354 +0800
+@@ -1,15 +1,16 @@
+ # Phonon Boltzmann transport solver
+ 
+ Steady 2D2V gray linear Callaway phonon BTE.  Nodal discontinuous Galerkin in
+-space, discrete ordinates in angle, source iteration in time.
++space, discrete ordinates in angle, Krylov-accelerated source iteration for the
++outer solve.
+ 
+     from pybte import Case, Solver
+-    record = Solver(Case.from_yaml("cases/kn_1e-2.yaml")).run()
++    record = Solver(Case.from_yaml("cases/F1_1e-2.yaml")).run()
+     record.iterations, record.converged, record.temp
+ 
+ or from the command line::
+ 
+-    python -m pybte cases/kn_1e-2.yaml
++    python -m pybte cases/F1_1e-2.yaml
+ 
+ ## The model
+ 
+@@ -33,6 +34,56 @@
+ neighbours already updated in the same pass, which is what makes it an exact
+ solve for that direction.
+ 
++## How the outer solve works
++
++A sweep reads the distribution only through the three moment fields that build
++its scattering source -- `Cv*T`, `qx`, `qy`, one value per DG degree of freedom
++-- plus, at a diffusely reflecting wall, that wall's emission.  So a sweep
++followed by `compute_moments` is an **affine map on a small vector**,
++
++    u = (phi, qx, qy, f_wall)        ->    G u + g,      phi = Cv*T,
++
++and the solver's answer is the solution of `(I - G) u = g`: 3720 unknowns for
++the shipped case, against 240 000 for the distribution itself.  The loop above
++is plain Richardson on that system.  Because the Callaway collision operator
++conserves energy exactly, `||G|| -> 1` as the medium becomes optically thick,
++which is why the loop crawls -- and why its stopping rule stops being
++informative long before it arrives: it measures the step between iterates, and
++the remaining error is that step times `rho/(1-rho)`.
++
++`Solver.run` runs GMRES on the same system instead (`pybte/accel.py`).  One
++matrix-vector product is one sweep, so an iteration costs exactly what it cost
++before; what changes is how many are needed.  The preconditioner
++(`pybte/dsa.py`) is the fluid limit of the transport operator, discretised by
++symmetric interior penalty on the same DG space and factorised once per case:
++
++* a **diffusion** solve for the energy mode, `-div(D grad phi) = r/tau_C` with
++  `D = Vg^2 tau_R/3` and the Marshak conditions of the two wall types.  This is
++  classical DSA and it carries the diffusive and ballistic regimes;
++* a **vector Helmholtz** solve for the vorticity mode,
++  `(1/tau_R - nu lap)^-1 (1/tau_C - nu lap)` with the Guyer-Krumhansl viscosity
++  `nu = tau_C Vg^2/5`.  When the normal channel dominates (`tau_N << tau_R`)
++  the slowest eigenvector of `G` is not the energy mode at all but a nearly
++  divergence-free heat flux, and diffusion alone does not see it.
++
++Sweeps to convergence on the shipped cases, against the loop it replaces:
++
++    case             source iteration   GMRES + fluid preconditioner
++    F1_1_1                        33                             15
++    F1_1e-1                      317                             13
++    F1_1e-2                    16830                             21
++    F1_1e-3               (>30000)                               33
++    F1_10_1e-2                  2706                             64
++    F2_1_1                        75                             19
++    F2_1e-1                      643                             18
++    F2_1e-2               (>30000)                               24
++    F2_1e-3               (>30000)                               35
++    F2_10_1e-2                  2444                             78
++
++`Solver.run_source_iteration` keeps the original loop for comparison; `run`
++falls back to it if a direction's element graph has a cycle, or if the Krylov
++solve does not converge inside `TMAX`.
++
+ ## Cases
+ 
+ Two boundary-condition families on the same square and the same
+@@ -51,6 +102,9 @@
+ 
+     pybte/          the solver
+       driver.py     the outer iteration
++      accel.py      the moment fixed point and its Krylov solve
++      dsa.py        the fluid-limit preconditioner (diffusion + viscosity)
++      krylov.py     right-preconditioned GMRES
+       sweep.py      the transport sweep
+       moments.py    moments and the residual
+       basis.py      nodal DG bases
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/__main__.py solution/pybte/__main__.py
+--- environment/pybte/__main__.py	2026-09-08 16:38:19.801918575 +0800
++++ solution/pybte/__main__.py	2026-09-10 11:19:56.394365989 +0800
+@@ -120,6 +120,12 @@
+     i.add_argument("case")
+     i.set_defaults(fn=_cmd_info)
+ 
++    argv = list(sys.argv[1:] if argv is None else argv)
++    # ``python -m pybte case.yaml`` -- the documented short form; anything that
++    # is not one of the subcommands is taken as a case to run
++    if argv and not argv[0].startswith("-") and argv[0] not in sub.choices:
++        argv = ["run"] + argv
++
+     args = p.parse_args(argv)
+     return args.fn(args)
+ 
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/accel.py solution/pybte/accel.py
+--- environment/pybte/accel.py	1970-01-01 08:00:00.000000000 +0800
++++ solution/pybte/accel.py	2026-09-10 11:43:53.589916135 +0800
+@@ -0,0 +1,191 @@
++"""The accelerated outer solve.
++
++Source iteration is a fixed point on a *small* vector.  A sweep reads the
++distribution only through the three moment fields that build its scattering
++source -- ``Cv*T``, ``qx``, ``qy``, one value per DG degree of freedom -- plus,
++when a diffusely reflecting wall is present, that wall's emission.  Everything
++else in the sweep is either fixed data or inflow from an element the same
++sweep has already overwritten.  So with
++
++    u = (phi, qx, qy, f_wall),      phi = Cv*T = int f dOmega
++
++one sweep followed by the moment update is an *affine* map ``u -> G u + g``,
++and the solver's fixed point is the solution of
++
++    (I - G) u = g,      g = G 0 + g = one sweep from a zero source.
++
++That system has 3*NDOF_TRI*N_TRIS + NDOF_TRI*N_WALLFACES unknowns -- 3720 for
++the shipped case, against 240 000 for the distribution itself -- and each
++matrix-vector product costs exactly one sweep.  Source iteration is plain
++Richardson on it, which is why it crawls: ``||G|| -> 1`` as the medium becomes
++optically thick, because the collision operator conserves energy exactly.
++GMRES on the same operator, preconditioned by the diffusion limit
++(:mod:`pybte.dsa`), converges in a few tens of sweeps at every stiffness.
++
++What is *not* changed: the sweep, the moment reduction, the wall-flux update
++and the discrete system they define.  The fixed point reached here is the same
++one source iteration is walking towards, to round-off.
++"""
++from __future__ import annotations
++
++import numpy as np
++
++from .dsa import DiffusionOperator
++from .krylov import gmres_right
++from .moments import compute_moments
++
++__all__ = ["MomentSystem"]
++
++
++class MomentSystem:
++    """The affine moment map ``u -> G u + g`` and its diffusion preconditioner."""
++
++    def __init__(self, solver):
++        self.solver = solver
++        c = solver.case
++        self.ctx = solver.ctx
++        self.bcdata = solver.bcdata
++        self.integrals = solver.integrals
++        self.mesh = solver.mesh
++        self.cv = c.flow.cv
++        nd = self.nd = solver.ndof
++        nt = self.nt = solver.n_tris
++        self.nmom = nd * nt
++        self.ndir_ntris = solver.ndir * nt
++
++        self.prec = DiffusionOperator(solver.mesh, solver.integrals, c,
++                                      solver.bcdata.bc_type)
++        self.wall_faces = self.prec.wall_faces
++        self.nfw = int(self.wall_faces.size) if self.bcdata.has_nonthermalising else 0
++        self.size = 3 * self.nmom + self.nfw * nd
++
++        from .moments import Moments
++        self.mom_in = Moments.zeros(nd, nt)
++        self.vdf = solver.vdf
++        self.mom_out = solver.mom
++        self._fw = np.zeros((max(self.nfw, 1), nd))
++        self.sweeps = 0
++        self._refactor = (self.ndir_ntris
++                          if solver.ctx.mode == "onthefly" else 0)
++
++    # -- packing -----------------------------------------------------------
++    def _scatter(self, u: np.ndarray) -> None:
++        nm, nd, nt = self.nmom, self.nd, self.nt
++        m = self.mom_in
++        np.multiply(u[:nm].reshape(nd, nt), 1.0 / self.cv, out=m.ts)
++        m.qxs[:] = u[nm:2 * nm].reshape(nd, nt)
++        m.qys[:] = u[2 * nm:3 * nm].reshape(nd, nt)
++        if self.nfw:
++            self.bcdata.flux_wall[self.wall_faces] = u[3 * nm:].reshape(self.nfw, nd)
++
++    def _gather(self, out: np.ndarray) -> np.ndarray:
++        nm = self.nmom
++        m = self.mom_out
++        np.multiply(m.ts.reshape(-1), self.cv, out=out[:nm])
++        out[nm:2 * nm] = m.qxs.reshape(-1)
++        out[2 * nm:3 * nm] = m.qys.reshape(-1)
++        if self.nfw:
++            out[3 * nm:] = self.bcdata.flux_wall[self.wall_faces].reshape(-1)
++        return out
++
++    # -- the affine map ----------------------------------------------------
++    def apply(self, u: np.ndarray) -> np.ndarray:
++        """One sweep plus the moment update: ``G u + g``."""
++        self._scatter(u)
++        self.ctx.sweep(self.mom_in, self.vdf)
++        compute_moments(self.vdf, self.ctx.cxv, self.ctx.cyv, self.ctx.domega,
++                        self.integrals.int_tri, self.cv, self.mom_out)
++        if self.nfw:
++            self.bcdata.update_wall_flux(self.vdf, self.ctx.cxv, self.ctx.cyv,
++                                         self.ctx.domega,
++                                         self.integrals.int_tri_fc, self.mesh)
++        self.sweeps += 1
++        self.solver.factorisation_count += self._refactor
++        return self._gather(np.empty(self.size))
++
++    def residual_of(self, u: np.ndarray) -> np.ndarray:
++        """``g - (I - G) u = G u + g - u``; a sweep, and it leaves ``vdf``
++        holding the distribution that goes with ``u``."""
++        return self.apply(u) - u
++
++    # -- preconditioner ----------------------------------------------------
++    def precondition(self, r: np.ndarray) -> np.ndarray:
++        nm, nd, nt = self.nmom, self.nd, self.nt
++        p = self.prec
++        e = p.solve(r[:nm].reshape(nd, nt))                  # (nt, nd)
++        gx, gy = p.gradient(e)
++        qx = p.flux(np.ascontiguousarray(r[nm:2 * nm].reshape(nd, nt).T))
++        qy = p.flux(np.ascontiguousarray(r[2 * nm:3 * nm].reshape(nd, nt).T))
++        out = np.empty_like(r)
++        out[:nm] = r[:nm] + e.T.reshape(-1)
++        out[nm:2 * nm] = (qx - p.D * gx).T.reshape(-1)
++        out[2 * nm:3 * nm] = (qy - p.D * gy).T.reshape(-1)
++        if self.nfw:
++            self.prec.wall_emission(e, self._fw)
++            out[3 * nm:] = r[3 * nm:] + self._fw.reshape(-1)
++        return out
++
++    # -- the solve ---------------------------------------------------------
++    def state_from_vdf(self):
++        """The moment vector of whatever is currently in ``vdf`` -- this is how
++        a restart file becomes an initial guess for the Krylov solve."""
++        compute_moments(self.vdf, self.ctx.cxv, self.ctx.cyv, self.ctx.domega,
++                        self.integrals.int_tri, self.cv, self.mom_out)
++        if self.nfw:
++            self.bcdata.update_wall_flux(self.vdf, self.ctx.cxv, self.ctx.cyv,
++                                         self.ctx.domega,
++                                         self.integrals.int_tri_fc, self.mesh)
++        return self._gather(np.empty(self.size))
++
++    def solve(self, tol_rel: float = 1.0e-12, accept_rel: float = 1.0e-10,
++              err_rel: float = 1.0e-9, maxiter: int = 400, restart: int = 200,
++              x0=None, callback=None):
++        """Drive ``(I - G) u = g`` to a *solution*-relative accuracy.
++
++        Returns ``(u, history, converged)``.  On return ``vdf`` holds the
++        distribution belonging to ``u`` and ``mom`` its moments, so the pair
++        satisfies the discrete transport system to the residual reported.
++
++        Two tolerances, because a residual is not an error: ``(I - G)`` has a
++        condition number of order ``(L/tau_C)^2``, so the run is stopped on
++        ``||r||`` *and* on the diffusion estimate ``||P^-1 r||`` of the
++        distance to the fixed point, both relative to the size of the
++        solution.
++        """
++        g = self.apply(np.zeros(self.size))
++        scale = float(np.linalg.norm(self.precondition(g))) or 1.0
++        tol = tol_rel * scale
++        accept = accept_rel * scale
++        matvec = lambda x: x - (self.apply(x) - g)
++        hist: list[float] = [float(np.linalg.norm(g)) / scale]
++        if callback is not None:
++            callback(self.sweeps, hist[0])
++
++        def cb(_it, res):
++            hist.append(res / scale)
++            if callback is not None:
++                callback(self.sweeps, res / scale)
++
++        u = x0
++        converged = False
++        stalled = False
++        target = accept
++        while True:
++            left = maxiter - self.sweeps
++            if left > 0 and not stalled:
++                before = self.sweeps
++                u, res, _ = gmres_right(matvec, g, self.precondition, x0=u,
++                                        tol=target, maxiter=left,
++                                        restart=min(restart, left), callback=cb)
++                stalled = res > target and self.sweeps > before
++            elif u is None:
++                u = np.zeros(self.size)
++            r = self.residual_of(u)          # leaves vdf/mom belonging to u
++            rn = float(np.linalg.norm(r))
++            err = float(np.linalg.norm(self.precondition(r))) / scale
++            converged = rn <= accept and err <= err_rel
++            if converged or self.sweeps >= maxiter or stalled:
++                break
++            # the residual is small but the error estimate is not: ask for more
++            target = max(tol, min(target, rn) * 1.0e-2)
++        return u, hist, converged
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/driver.py solution/pybte/driver.py
+--- environment/pybte/driver.py	2026-09-08 16:38:19.803773568 +0800
++++ solution/pybte/driver.py	2026-09-10 11:33:13.583091986 +0800
+@@ -1,6 +1,6 @@
+ """The outer iteration -- the port of ``Callaway_2D_2V_DG.f90``.
+ 
+-::
++The Fortran wrote::
+ 
+     STEP = 1
+     DO
+@@ -10,10 +10,27 @@
+         EXIT when RESIDUAL < TOL or STEP >= TMAX
+     END DO
+ 
+-Nothing about that structure changes in the port.  What is added around it:
+-an explicit restart contract, an optional true residual, and a
+-:class:`~pybte.io_output.RunRecord` complete enough that a verifier never has
+-to parse stdout.
++That is Richardson iteration on the moment fixed point, and it is the one
++thing in the port that had to change.  Its contraction factor is
++``1 - O(tau_C^2/L^2)`` because the Callaway collision operator conserves
++energy exactly, so at ``tau_R = 1e-2`` it needs 16 830 sweeps to move the
++temperature by ``1e-8`` per step -- and is still ``8e-5`` away from its own
++fixed point when it stops, because the stopping rule measures the *step*, not
++the *error*.  At ``tau_R = 1e-3`` it does not arrive at all inside ``TMAX``.
++
++:meth:`Solver.run` solves the same fixed point with GMRES preconditioned by
++the fluid limit of the transport operator (:mod:`pybte.accel`,
++:mod:`pybte.dsa`).  Each Krylov step is one sweep, the sweep and the moment
++reduction are untouched, and the answer is the same one the loop above is
++walking towards -- reached in tens of sweeps at every stiffness rather than
++tens of thousands, and to round-off rather than to whatever the step size
++happened to be.  :meth:`Solver.run_source_iteration` keeps the original loop
++verbatim, and :meth:`Solver.run` falls back to it if the mesh is not sweepable
++or if the Krylov solve ever fails to converge inside ``TMAX``.
++
++What is added around it: an explicit restart contract, an optional true
++residual, and a :class:`~pybte.io_output.RunRecord` complete enough that a
++verifier never has to parse stdout.
+ """
+ from __future__ import annotations
+ 
+@@ -121,8 +138,11 @@
+         arr = np.frombuffer(raw, dtype="<f8").reshape(
+             (self.ndof, self.n_tris, self.case.velmesh.npole,
+              self.case.velmesh.nazim), order="F")
+-        self.vdf = np.ascontiguousarray(
+-            np.transpose(arr, (3, 2, 1, 0)).reshape(self.ndir, self.n_tris, self.ndof))
++        # np.frombuffer hands back a read-only view and the reshape below can
++        # keep that flag, which the jitted sweep then refuses to write into
++        self.vdf = np.array(
++            np.transpose(arr, (3, 2, 1, 0)).reshape(self.ndir, self.n_tris, self.ndof),
++            dtype=np.float64, order="C")
+         return {"enabled": True, "path": str(path),
+                 "sha256": hashlib.sha256(raw).hexdigest()}
+ 
+@@ -153,6 +173,82 @@
+ 
+     # -- the outer loop -----------------------------------------------------
+     def run(self, callback=None, progress_every: int = 0) -> RunRecord:
++        """Solve the case.
++
++        The loop the Fortran wrote -- sweep, moments, stop on
++        ``Calculate_Residual_T < tol`` -- is Richardson iteration on the
++        moment fixed point, and it converges at a rate that degenerates as
++        ``tau_C/L -> 0``.  :mod:`pybte.accel` solves the *same* fixed point
++        with GMRES preconditioned by its diffusion limit, which costs the same
++        one sweep per iteration and converges in tens of them at every
++        stiffness.  ``run_source_iteration`` keeps the original loop.
++        """
++        c = self.case
++        if int(self.order.cycles_broken.sum()) or self.bcdata.has_periodic:
++            # both make a sweep read VDF values the same sweep has not yet
++            # overwritten -- a broken cycle by construction, a periodic pair
++            # because the partner element is not ordered against this one --
++            # so the iteration is no longer a map on the moments alone
++            return self.run_source_iteration(callback, progress_every)
++
++        from .accel import MomentSystem
++
++        tol, tmax = c.iteration.tol, c.iteration.tmax
++        t0 = time.perf_counter()
++        ms = MomentSystem(self)
++        maxiter = max(1, min(int(tmax) - 2, 5000))
++
++        cb = None
++        if callback is not None or progress_every:
++            def cb(step, res):
++                if progress_every and step % progress_every == 0:
++                    print(f"  step {step:8d}  residual {res:.6e}", flush=True)
++                if callback is not None:
++                    callback(step, res, self)
++
++        u0 = ms.state_from_vdf() if self.restart_info["enabled"] else None
++        u, residuals, converged = ms.solve(maxiter=maxiter,
++                                           restart=min(maxiter, 400),
++                                           x0=u0, callback=cb)
++        self._accel_sweeps = ms.sweeps
++
++        # ``solve`` leaves VDF, the moments and the wall emission all belonging
++        # to the same iterate; that pair is what the verifier reads.  Report
++        # the Fortran's own stopping quantity across that last sweep.
++        t_prev = (u[:ms.nmom].reshape(self.ndof, self.n_tris)
++                  * self.integrals.int_tri).sum(axis=0) / c.flow.cv
++        res = residual_iterate(self.mom.temp, t_prev)
++        residuals.append(res)
++        self.t_old[:] = self.mom.temp
++        converged = bool(converged and res < tol and ms.sweeps <= tmax)
++
++        step = ms.sweeps
++        if not converged and step < tmax:
++            # never do worse than the loop we replaced: spend whatever budget
++            # is left on plain source iteration, warm-started from here
++            while step < tmax:
++                step += 1
++                self.step()
++                res = residual_iterate(self.mom.temp, self.t_old)
++                self.t_old[:] = self.mom.temp
++                residuals.append(res)
++                if res < tol:
++                    converged = True
++                    break
++            ms.sweeps = step
++
++        wall = time.perf_counter() - t0
++        masses = [float(self.mom.temp.sum())]
++        true_res = None
++        if c.iteration.true_residual:
++            true_res = [self.ctx.true_residual(self.mom, self.vdf)]
++        return self._record(ms.sweeps, converged, residuals, masses,
++                            true_res, wall, scheme="DSA-GMRES",
++                            extra={"krylov_sweeps": ms.sweeps,
++                                   "moment_unknowns": ms.size})
++
++    def run_source_iteration(self, callback=None,
++                             progress_every: int = 0) -> RunRecord:
+         """Source iteration: ``Calculate_Residual_T < tol``, as the Fortran."""
+         c = self.case
+         tol, tmax = c.iteration.tol, c.iteration.tmax
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/dsa.py solution/pybte/dsa.py
+--- environment/pybte/dsa.py	1970-01-01 08:00:00.000000000 +0800
++++ solution/pybte/dsa.py	2026-09-10 11:07:19.277324618 +0800
+@@ -0,0 +1,250 @@
++"""Synthetic acceleration -- the low-order operators that make the source
++iteration converge at a rate independent of the two relaxation times.
++
++Why it is needed
++----------------
++Source iteration transports one collision mean free path per sweep, and the
++Callaway collision operator conserves energy exactly, so its contraction
++factor is ``1 - O(tau_C^2/L^2)``: at ``tau_R = 1e-3`` the shipped solver needs
++of order a million sweeps to actually reach its fixed point.  The slow part of
++the iteration error is the *fluid* limit of the transport operator, and it can
++be removed by solving a cheap elliptic problem once per Krylov step.
++
++The low-order model
++-------------------
++Take the zeroth, first and second angular moments of the discrete transport
++equation after a sweep.  With ``phi = int f dOmega``, ``q = int c f dOmega``
++and ``r = u - (G u + g)`` the residual of the moment fixed point, the first two
++are exact:
++
++    div q'              = r_phi / tau_C
++    div P' + q'/tau_C   = q / tau_N
++
++and the third, closed by the ``P1`` third moment, gives
++
++    P' = (vg^2/3) phi I - nu (div q' I + grad q' + grad q'^T),  nu = tau_C vg^2/5.
++
++Two slow families come out of that, and both have to be treated:
++
++**the energy mode** -- eliminate ``q'`` through the isotropic part of ``P'``
++and use ``1/tau_C - 1/tau_N = 1/tau_R`` (normal collisions conserve momentum,
++so only the resistive channel damps the flux).  What is left is diffusion,
++
++    -div(D grad phi') = r_phi / tau_C,   D = vg^2 tau_R / 3,   q' = -D grad phi'
++
++with the Marshak conditions of the two wall types: ``D dphi'/dn +
++(vg/2) phi' = 0`` at a thermalising wall, whose incoming half-space is
++prescribed so its *error* vanishes, and ``D dphi'/dn = 0`` at a diffusely
++reflecting one, which re-emits exactly what it receives.  This is textbook
++DSA and it is what carries the diffusive and ballistic cases.
++
++**the vorticity mode** -- when the normal channel dominates (``tau_N << tau_R``)
++the slowest eigenvector of ``G`` is not the energy mode at all but a nearly
++divergence-free ``q``, damped only by the resistive channel and by the
++Guyer-Krumhansl viscosity.  For it the model above says nothing: it predicts
++``q' = -D grad phi'``, a pure gradient.  Keeping the viscous part of ``P'``
++instead gives, for a transverse ``q``,
++
++    (1/tau_C - nu lap) q' = q / tau_N   =>   (I - G) q = tau_C (1/tau_R - nu lap) q
++
++so the block that has to be inverted is a vector Helmholtz problem,
++
++    e_q = (1/tau_R - nu lap)^-1 (1/tau_C - nu lap) r_q.
++
++Its amplification is ``tau_R/tau_C`` at long wavelengths and falls to one at
++the grid scale -- exactly the spread that a scalar factor cannot reproduce and
++that made a constant ``tau_R/tau_N`` rescaling of ``r_q`` *worse* than leaving
++it alone.  In the diffusive limit ``tau_C -> tau_R`` and it collapses to the
++identity, so it is built only when ``tau_N`` is comparable with ``tau_R`` or
++smaller.
++
++Discretisation
++--------------
++Symmetric interior penalty on the *same* nodal DG space as the transport
++solve, assembled from the tensors :mod:`pybte.integration` already builds, so
++no new quadrature is introduced.  Each ``ndof_tri * n_tris`` matrix is sparse
++and is LU-factorised once per case.
++"""
++from __future__ import annotations
++
++import numpy as np
++
++from .constants import BC_NONTHERMALISING, BC_THERMALISING, PI
++
++__all__ = ["DiffusionOperator"]
++
++#: interior-penalty weight; sigma_F = ALPHA * kappa * (deg+1)^2 / h_F
++ALPHA = 4.0
++
++#: build the vector-Helmholtz block only when the normal channel actually
++#: competes with the resistive one; below this ratio it is the identity to
++#: within its own truncation error
++VISCOUS_THRESHOLD = 1.05
++
++#: wall damping of the tangential flux in the viscous block, in units of vg;
++#: a diffusely reflecting or thermalising wall re-emits isotropically and so
++#: destroys the tangential momentum that reaches it
++VISCOUS_ROBIN = 0.5
++
++
++class _SIP:
++    """Assembly of a symmetric-interior-penalty Laplacian on the DG space."""
++
++    def __init__(self, mesh, integrals, case, bc_type):
++        nd = case.ndof_tri
++        nt = mesh.n_tris
++        self.nd, self.nt = nd, nt
++        self.deg = case.dg.deg
++        self.vg = case.flow.vg
++
++        self.mass = np.ascontiguousarray(
++            np.transpose(integrals.int_tri_tri, (2, 0, 1)))
++        ax = np.transpose(integrals.int_tri_tri_x, (0, 2, 1))  # int phi_m dphi_l/dx
++        ay = np.transpose(integrals.int_tri_tri_y, (0, 2, 1))
++        minv = np.linalg.inv(self.mass)
++        self.dx = minv @ ax          # dphi_l/dx = sum_k dx[k, l] phi_k
++        self.dy = minv @ ay
++
++        fcm = integrals.int_tri_fc
++        ttfc = integrals.int_tri_tri_fc
++        nx = mesh.tri_normal[:, :, 0]
++        ny = mesh.tri_normal[:, :, 1]
++        bc_type = np.asarray(bc_type)
++
++        # -- interior faces: geometry-only pieces of the SIP form ----------
++        f = np.flatnonzero(mesh.face_bc < 0)
++        self.ik1 = k1 = mesh.face_tri[f, 0]
++        self.ik2 = k2 = mesh.face_tri[f, 1]
++        l1 = mesh.face_lfc[f, 0]
++        l2 = mesh.face_lfc[f, 1]
++        n0 = nx[k1, l1][:, None, None]
++        n1 = ny[k1, l1][:, None, None]
++        ndp = n0 * self.dx[k1] + n1 * self.dy[k1]
++        ndm = n0 * self.dx[k2] + n1 * self.dy[k2]
++        self.fpp = fcm[k1, l1]
++        self.fmm = fcm[k2, l2]
++        self.fpm = ttfc[k1, l1]
++        self.fmp = ttfc[k2, l2]
++        self.gp = self.fpp @ ndp
++        self.gpm = self.fpm @ ndm
++        self.gm = self.fmm @ ndm
++        self.gmp = self.fmp @ ndp
++        self.hf = (np.minimum(mesh.tri_area[k1], mesh.tri_area[k2])
++                   / mesh.face_len[f])
++
++        # -- boundary faces ------------------------------------------------
++        b = np.flatnonzero(mesh.face_bc >= 0)
++        side = (mesh.face_tri[b, 0] < 0).astype(np.int64)
++        self.bk = mesh.face_tri[b, side]
++        self.bl = mesh.face_lfc[b, side]
++        self.btyp = bc_type[mesh.face_bc[b]]
++        self.btrace = fcm[self.bk, self.bl]
++        self.bfaces = b
++        self.has_thermalising = bool(np.any(bc_type == BC_THERMALISING))
++
++    # ------------------------------------------------------------------
++    def matrix(self, kappa: float, robin: float = 0.0, mass_coeff: float = 0.0,
++               alpha: float = ALPHA, robin_all: bool = False):
++        """``mass_coeff * M + kappa * K_SIP`` with a Robin term on the
++        thermalising walls (natural, i.e. Neumann, on the others)."""
++        import scipy.sparse as sp
++
++        nd, nt = self.nd, self.nt
++        tp = lambda a: np.transpose(a, (0, 2, 1))
++        blocks = []
++        vol = kappa * (tp(self.dx) @ self.mass @ self.dx
++                       + tp(self.dy) @ self.mass @ self.dy)
++        if mass_coeff:
++            vol = vol + mass_coeff * self.mass
++        blocks.append((np.arange(nt), np.arange(nt), vol))
++        if self.ik1.size:
++            sig = (alpha * kappa * (self.deg + 1) ** 2 / self.hf)[:, None, None]
++            h = 0.5 * kappa
++            blocks += [
++                (self.ik1, self.ik1, -h * (self.gp + tp(self.gp)) + sig * self.fpp),
++                (self.ik1, self.ik2, -h * (self.gpm - tp(self.gmp)) - sig * self.fpm),
++                (self.ik2, self.ik1, h * (self.gmp - tp(self.gpm)) - sig * self.fmp),
++                (self.ik2, self.ik2, h * (self.gm + tp(self.gm)) + sig * self.fmm),
++            ]
++        if robin:
++            m = (np.ones_like(self.btyp, dtype=bool) if robin_all
++                 else self.btyp == BC_THERMALISING)
++            if np.any(m):
++                blocks.append((self.bk[m], self.bk[m], robin * self.btrace[m]))
++
++        eye = np.arange(nd)
++        rows = np.concatenate([np.broadcast_to(
++            (b[0][:, None] * nd + eye)[:, :, None], (b[0].size, nd, nd)).ravel()
++            for b in blocks])
++        cols = np.concatenate([np.broadcast_to(
++            (b[1][:, None] * nd + eye)[:, None, :], (b[1].size, nd, nd)).ravel()
++            for b in blocks])
++        vals = np.concatenate([b[2].ravel() for b in blocks])
++        a = sp.csr_matrix((vals, (rows, cols)), shape=(nd * nt, nd * nt))
++        if not (robin and self.has_thermalising) and not mass_coeff:
++            a = a + sp.eye(nd * nt, format="csr") * (kappa * 1e-8)
++        return a.tocsc()
++
++
++class DiffusionOperator:
++    """The synthetic-acceleration solve: ``r -> (I - G)^-1 r``, approximately."""
++
++    def __init__(self, mesh, integrals, case, bc_type, alpha: float = ALPHA):
++        import scipy.sparse.linalg as spla
++
++        vg = case.flow.vg
++        self.nd = nd = case.ndof_tri
++        self.nt = nt = mesh.n_tris
++        self.cv = case.flow.cv
++        self.tau_c = tau_c = case.tau_c
++        self.tau_r = tau_r = case.flow.tau_r
++        self.D = D = vg * vg * tau_r / 3.0
++
++        sip = _SIP(mesh, integrals, case, bc_type)
++        self.mass, self.dx, self.dy = sip.mass, sip.dx, sip.dy
++        self.lu = spla.splu(sip.matrix(D, robin=0.5 * vg, alpha=alpha))
++
++        # the vector-Helmholtz block, only where it is not the identity
++        self.visc = None
++        if tau_r / tau_c > VISCOUS_THRESHOLD:
++            nu = tau_c * vg * vg / 5.0
++            rb = VISCOUS_ROBIN * vg
++            self.visc = spla.splu(sip.matrix(nu, mass_coeff=1.0 / tau_r,
++                                             alpha=alpha, robin=rb,
++                                             robin_all=True))
++            self.visc_num = sip.matrix(nu, mass_coeff=1.0 / tau_c, alpha=alpha,
++                                       robin=rb, robin_all=True)
++
++        # diffusely reflecting walls: their emission follows the local phi
++        m = sip.btyp == BC_NONTHERMALISING
++        self.wall_faces = sip.bfaces[m]
++        self.wall_tri = sip.bk[m]
++        self.wall_trace = sip.btrace[m]
++        self.has_wall = bool(self.wall_faces.size)
++
++    # ------------------------------------------------------------------
++    def solve(self, r_phi: np.ndarray) -> np.ndarray:
++        """``phi'`` from ``-div(D grad phi') = r_phi / tau_C``; (nt, nd)."""
++        rp = np.ascontiguousarray(r_phi.T)
++        rhs = (self.mass @ rp[:, :, None])[:, :, 0] / self.tau_c
++        return self.lu.solve(rhs.ravel()).reshape(self.nt, self.nd)
++
++    def gradient(self, e: np.ndarray):
++        """``grad phi'`` in the same DG space; ``e`` is (nt, nd)."""
++        return ((self.dx @ e[:, :, None])[:, :, 0],
++                (self.dy @ e[:, :, None])[:, :, 0])
++
++    def flux(self, r_q: np.ndarray) -> np.ndarray:
++        """``(1/tau_R - nu lap)^-1 (1/tau_C - nu lap) r_q``; ``r_q`` is
++        (nt, nd), and the identity when the viscous block is switched off."""
++        if self.visc is None:
++            return r_q
++        return self.visc.solve(self.visc_num @ r_q.ravel()).reshape(r_q.shape)
++
++    def wall_emission(self, e: np.ndarray, out: np.ndarray) -> None:
++        """Correction to ``FLUX_WALL``: a diffuse wall in local equilibrium
++        emits ``phi/(4 pi)``, and ``FLUX_WALL`` stores ``-oint f_w phi_m ds``."""
++        if not self.has_wall:
++            return
++        out[:] = (self.wall_trace @ e[self.wall_tri][:, :, None])[:, :, 0]
++        out *= -1.0 / (4.0 * PI)
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/integration.py solution/pybte/integration.py
+--- environment/pybte/integration.py	2026-09-05 12:17:48.504734452 +0800
++++ solution/pybte/integration.py	2026-09-10 11:18:04.682114109 +0800
+@@ -70,27 +70,23 @@
+ 
+ #: numpy's ``power`` special-cases small integral exponents and multiplies,
+ #: while gfortran's ``x**REAL(n,DBL)`` calls libm ``pow``.  The two differ by
+-#: one ulp on roughly 5% of inputs.  ``math.pow`` *is* libm ``pow``, so this
+-#: switch buys bit-identical face tensors at the cost of a Python-level loop
+-#: during setup only.  Turn it off for very large meshes.
++#: one ulp on roughly 5% of inputs, which is why this used to be a
++#: ``math.pow`` loop in Python.  ``float_power`` takes the libm branch
++#: unconditionally and agrees with ``math.pow`` bit for bit on every exponent
++#: the bases use, so the loop is gone and the tensors are unchanged.
+ EXACT_POW = True
+ 
+ 
+ def _powf(x, e):
+     """``x ** float(e)`` with the Fortran's libm semantics."""
+-    import math
+-
+-    if not EXACT_POW:
+-        return np.power(x, float(e))
+     x = np.asarray(x, dtype=float)
+     if e == 0:
+         return np.ones_like(x)
+     if e == 1:
+         return x.copy()
+-    flat = x.ravel()
+-    out = np.fromiter((math.pow(v, float(e)) for v in flat),
+-                      dtype=np.float64, count=flat.size)
+-    return out.reshape(x.shape)
++    if not EXACT_POW:
++        return np.power(x, float(e))
++    return np.float_power(x, float(e))
+ 
+ 
+ def _eval_mono(nodfun, mono, xi, eta):
+@@ -339,56 +335,66 @@
+         int_tri_fc_fc[:, :, :, j2] = np.transpose(acc, (1, 2, 0))
+ 
+     # -- INT_NODFUNC_TRI_TRI_FC --------------------------------------------
++    # One rule per (element, local face).  The Fortran writes this as a double
++    # loop; here the 3*N_TRIS rules are evaluated as one batch, which changes
++    # nothing about the arithmetic -- the same ``math.pow`` on the same
++    # scalars, accumulated over quadrature points in the same order -- but
++    # takes the per-call Python overhead out of the setup, where it dominated.
+     bc_codes = np.asarray(bc_codes) if bc_codes is not None else np.zeros(0, dtype=int)
+     bc_xoff = np.asarray(bc_xoff) if bc_xoff is not None else np.zeros(0)
+     bc_yoff = np.asarray(bc_yoff) if bc_yoff is not None else np.zeros(0)
+ 
++    tri_of = np.repeat(np.arange(n_tris), 3)                 # (3*n_tris,)
++    fcid = mesh.tri_faces.reshape(-1)
++    ln = mesh.face_len[fcid]
++    absc, weig = face_rule(ln)                               # (nfe, np_fc)
++    fx1 = nodes[mesh.face_nodes[fcid, 0], 0][:, None]
++    fy1 = nodes[mesh.face_nodes[fcid, 0], 1][:, None]
++    fx2 = nodes[mesh.face_nodes[fcid, 1], 0][:, None]
++    fy2 = nodes[mesh.face_nodes[fcid, 1], 1][:, None]
++    lnc = ln[:, None]
++    xp = (fx2 - fx1) / lnc * absc + fx1
++    yp = (fy2 - fy1) / lnc * absc + fy1
++
++    def _trace(elem, ox=(0.0,), oy=(0.0,)):
++        """Nodal basis of ``elem`` sampled at the face quadrature points."""
++        xs = nodes[mesh.tri_nodes[elem], 0] + np.asarray(ox).reshape(-1, 1)
++        ys = nodes[mesh.tri_nodes[elem], 1] + np.asarray(oy).reshape(-1, 1)
++        (bA, cA, dA), (fE, gE, hE) = _affine_to_reference(xs, ys)
++        return _eval_mono(C, mono,
++                          bA[:, None] * xp + cA[:, None] * yp + dA[:, None],
++                          fE[:, None] * xp + gE[:, None] * yp + hE[:, None])
++
++    pm = _trace(tri_of)                                      # (nfe, np_fc, ndof)
++
++    bcf = mesh.face_bc[fcid]
++    periodic = (bcf >= 0) & (bc_codes.size > 0) & (bc_codes[np.maximum(bcf, 0)] == BC_PERIODIC)
++    two_sided = (bcf < 0) | periodic
++
++    other = np.where(mesh.face_tri[fcid, 0] == tri_of,
++                     mesh.face_tri[fcid, 1], mesh.face_tri[fcid, 0])
++    ox = np.zeros(fcid.size)
++    oy = np.zeros(fcid.size)
++    if np.any(periodic):
++        for e in np.flatnonzero(periodic):
++            pair = int(mesh.face_pair[fcid[e]])
++            bc_p = int(mesh.face_bc[pair])
++            other[e], _ = mesh.adjacent(pair)
++            ox[e], oy[e] = float(bc_xoff[bc_p]), float(bc_yoff[bc_p])
++    pl = _trace(np.where(two_sided, other, tri_of), ox, oy)
++
++    acc2 = np.zeros((fcid.size, ndof_tri, ndof_tri))
++    acc1 = np.zeros((fcid.size, ndof_tri))
++    for q in range(np_fc):
++        acc2 += (pm[:, q, :, None] * pl[:, q, None, :]) * weig[:, q, None, None]
++        acc1 += pm[:, q, :] * weig[:, q, None]
+     int_tri_tri_fc = np.zeros((n_tris, 3, ndof_tri, ndof_tri))
+-    for i in range(n_tris):
+-        for j2 in range(3):
+-            fcid = int(mesh.tri_faces[i, j2])
+-            bc = int(mesh.face_bc[fcid])
+-            ln = float(mesh.face_len[fcid])
+-            fx1 = nodes[mesh.face_nodes[fcid, 0], 0]
+-            fy1 = nodes[mesh.face_nodes[fcid, 0], 1]
+-            fx2 = nodes[mesh.face_nodes[fcid, 1], 0]
+-            fy2 = nodes[mesh.face_nodes[fcid, 1], 1]
+-            absc, weig = face_rule(np.array([ln]))
+-            absc = absc[0]
+-            weig = weig[0]
+-            xp = (fx2 - fx1) / ln * absc + fx1
+-            yp = (fy2 - fy1) / ln * absc + fy1
+-
+-            xs = nodes[mesh.tri_nodes[i], 0]
+-            ys = nodes[mesh.tri_nodes[i], 1]
+-            (bA, cA, dA), (fE, gE, hE) = _affine_to_reference(xs, ys)
+-            pm = _eval_mono(C, mono, bA * xp + cA * yp + dA, fE * xp + gE * yp + hE)
+-
+-            periodic = bc >= 0 and bc_codes.size and bc_codes[bc] == BC_PERIODIC
+-            if bc < 0 or periodic:
+-                if bc < 0:
+-                    t1, t2 = mesh.face_tri[fcid]
+-                    other = t2 if t1 == i else t1
+-                    ox = oy = 0.0
+-                else:
+-                    pair = int(mesh.face_pair[fcid])
+-                    bc_p = int(mesh.face_bc[pair])
+-                    other, _ = mesh.adjacent(pair)
+-                    ox, oy = float(bc_xoff[bc_p]), float(bc_yoff[bc_p])
+-                xo = nodes[mesh.tri_nodes[other], 0] + ox
+-                yo = nodes[mesh.tri_nodes[other], 1] + oy
+-                (bA2, cA2, dA2), (fE2, gE2, hE2) = _affine_to_reference(xo, yo)
+-                pl = _eval_mono(C, mono, bA2 * xp + cA2 * yp + dA2,
+-                                fE2 * xp + gE2 * yp + hE2)
+-                acc = np.zeros((ndof_tri, ndof_tri))
+-                for q in range(np_fc):
+-                    acc += (pm[q][:, None] * pl[q][None, :]) * weig[q]
+-                int_tri_tri_fc[i, j2] = acc
+-            else:
+-                acc = np.zeros(ndof_tri)
+-                for q in range(np_fc):
+-                    acc += pm[q] * weig[q]
+-                int_tri_tri_fc[i, j2] = acc[:, None]
++    one = ~two_sided
++    int_tri_tri_fc.reshape(-1, ndof_tri, ndof_tri)[two_sided] = acc2[two_sided]
++    # a boundary face has no partner element: the Fortran stores the plain
++    # ``oint phi_m ds`` and the sweep reads column 0 only, but the reference
++    # broadcasts it across every column and that is what is reproduced here
++    int_tri_tri_fc.reshape(-1, ndof_tri, ndof_tri)[one] = acc1[one][:, :, None]
+ 
+     # -- element quadrature ------------------------------------------------
+     qax, qay, qw = tri_quadrature(np_tri)
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/krylov.py solution/pybte/krylov.py
+--- environment/pybte/krylov.py	1970-01-01 08:00:00.000000000 +0800
++++ solution/pybte/krylov.py	2026-09-10 11:43:53.589781834 +0800
+@@ -0,0 +1,109 @@
++"""A right-preconditioned GMRES, specialised for the moment fixed point.
++
++Nothing exotic -- Arnoldi with classical Gram-Schmidt applied twice (as
++stable as modified Gram-Schmidt, but a pair of BLAS-2 calls instead of a
++Python loop) and Givens rotations for the least-squares problem.  It is here
++rather than taken from :mod:`scipy.sparse.linalg` for two reasons:
++
++* every matrix-vector product is a transport sweep, so the per-iteration
++  Python overhead of ``scipy``'s ``LinearOperator`` wrapper is a measurable
++  fraction of the run;
++* the stopping rule has to be stated in terms of the *solution* norm rather
++  than the right-hand side.  ``(I - G)`` has a condition number of order
++  ``(L/tau_C)^2`` -- ``1e6`` on the stiffest shipped case -- so a residual
++  small relative to ``b`` says nothing about the error.  The caller supplies
++  an absolute tolerance derived from a preconditioned estimate of the
++  solution instead.
++"""
++from __future__ import annotations
++
++import numpy as np
++
++__all__ = ["gmres_right"]
++
++
++#: a cycle is abandoned once ``STAG_WINDOW`` iterations have failed to cut the
++#: residual by ``STAG_FACTOR``; without it an unreachable tolerance -- and
++#: ``(I - G)`` can be conditioned badly enough that round-off puts one out of
++#: reach -- would burn the whole iteration budget at the round-off floor
++STAG_WINDOW = 60
++STAG_FACTOR = 0.9
++
++
++def gmres_right(matvec, b, precond, x0=None, tol=1e-12, maxiter=200,
++                restart=None, callback=None):
++    """Solve ``A x = b`` with ``A`` given by ``matvec`` and right
++    preconditioner ``precond``.
++
++    Returns ``(x, resid, history)`` where ``resid`` is the final residual norm
++    estimate and ``history`` the norm after every iteration.  ``tol`` is
++    absolute.
++    """
++    n = b.size
++    restart = int(restart or maxiter)
++    x = np.zeros(n) if x0 is None else x0.copy()
++    history: list[float] = []
++    total = 0
++
++    while total < maxiter:
++        r = b - matvec(x) if total or x0 is not None else b.copy()
++        beta = float(np.linalg.norm(r))
++        if beta <= tol:
++            return x, beta, history
++        m = min(restart, maxiter - total)
++        v = np.empty((m + 1, n))
++        z = np.empty((m, n))
++        h = np.zeros((m + 1, m))
++        cs = np.zeros(m)
++        sn = np.zeros(m)
++        g = np.zeros(m + 1)
++        g[0] = beta
++        v[0] = r / beta
++        k = 0
++        for j in range(m):
++            z[j] = precond(v[j])
++            w = matvec(z[j])
++            total += 1
++            # classical Gram-Schmidt, twice
++            vj = v[:j + 1]
++            c1 = vj @ w
++            w -= c1 @ vj
++            c2 = vj @ w
++            w -= c2 @ vj
++            h[:j + 1, j] = c1 + c2
++            hn = float(np.linalg.norm(w))
++            h[j + 1, j] = hn
++            # apply the previous rotations to the new column
++            for i in range(j):
++                t = cs[i] * h[i, j] + sn[i] * h[i + 1, j]
++                h[i + 1, j] = -sn[i] * h[i, j] + cs[i] * h[i + 1, j]
++                h[i, j] = t
++            d = np.hypot(h[j, j], h[j + 1, j])
++            if d == 0.0:
++                cs[j], sn[j] = 1.0, 0.0
++            else:
++                cs[j], sn[j] = h[j, j] / d, h[j + 1, j] / d
++            h[j, j] = cs[j] * h[j, j] + sn[j] * h[j + 1, j]
++            h[j + 1, j] = 0.0
++            g[j + 1] = -sn[j] * g[j]
++            g[j] = cs[j] * g[j]
++            k = j + 1
++            res = abs(g[j + 1])
++            history.append(res)
++            if callback is not None:
++                callback(total, res)
++            if res <= tol or hn <= 1e-300:
++                break
++            if (len(history) > STAG_WINDOW
++                    and res > STAG_FACTOR * history[-1 - STAG_WINDOW]):
++                break
++            v[j + 1] = w / hn
++        y = np.linalg.solve(np.triu(h[:k, :k]), g[:k])
++        x += y @ z[:k]
++        res = float(abs(g[k]))
++        if res <= tol:
++            return x, res, history
++        if (len(history) > STAG_WINDOW
++                and res > STAG_FACTOR * history[-1 - STAG_WINDOW]):
++            return x, res, history          # stalled; the caller decides
++    return x, float(history[-1]) if history else float("nan"), history

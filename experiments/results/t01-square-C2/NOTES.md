@@ -15,25 +15,27 @@ only work outside the sweep moves the score. Gate 4 requires
 | 2 | PASS 10/10 | 921x | 120 (cap) | — | — | GMRES + **sparse low-order operator** (scipy LU) on the macroscopic unknowns. Leanest overhead of the four. Solution in place at the cap; transcript lost. | 14–25 / 20–37 |
 | 3 | PASS 10/10 | 974x | 84 | 87 | $15.64 | **Right-preconditioned GMRES** + coarse-angle low-order operator (`krylov.py`, `loworder.py`). | 11–26 / 18–38 |
 | 4 | PASS 10/10 | 862x | 110 | 111 | $21.96 | GMRES + **coarse-angle low-order operator** (`coarse_directions`, `LowOrderOperator`). | 13–24 / 21–39 |
-| 5 | | | | | | | |
+| 5 | PASS 10/10 | 576x | 120 (cap) | — | — | Right-preconditioned GMRES + **diffusion-type synthetic acceleration** (`dsa.py`, `DiffusionOperator`). Weakest on the hydrodynamic cells (52/64 sweeps), as a diffusion-only low-order operator should be. Solution in place at the cap; transcript lost. | 12–64 / 15–79 |
+
+**Result: 5/5 pass every gate; scores 548x, 576x, 862x, 921x, 974x (geometric mean 762x, spread 1.8x). Three of five hit the 2 h cap with a passing solution already in place.**
 
 ## What changed with the rule
 
 * **Nobody touched the sweep kernel.** Own-sweep times 8.4–11 ms against the
   verifier's 8.6–10.6 ms on every cell of every trial. The C-kernel detour of
   the previous run did not recur; there was no longer anything to gain from it.
-* **All four built the same kind of thing as under the sweep-count rule** — a
+* **All five built the same kind of thing as under the sweep-count rule** — a
   physics-based preconditioner for GMRES — and the scores now carry its cost:
   548x – 974x here against 989x – 3 293x by raw sweep count, because the
   low-order solve is charged at 1.3–2.4 sweep-equivalents per sweep (up to 8
   on trial 1's hydrodynamic cells).
-* **Spread 1.8x** across four trials of one model (974 / 548). The score
+* **Spread 1.8x** across five trials of one model (974 / 548). The score
   separates the same idea implemented with more or less overhead, which is
   what it was changed to do; it ranks trial 2's lean sparse solve above
   trial 1's heavier one although trial 1 uses fewer sweeps.
 * **Against the oracle**: 16x – 29x better than unpreconditioned GMRES under
   the same rule. That gap is the value of the preconditioner, measured at its
   real cost.
-* **The 2 h cap** was hit by two of four and neither was hurt: both had
+* **The 2 h cap** was hit by three of five and none was hurt: both had
   working solutions in place and were polishing. Transcripts are lost on
   timeout (`--output-format json`); `stream-json` would keep them.

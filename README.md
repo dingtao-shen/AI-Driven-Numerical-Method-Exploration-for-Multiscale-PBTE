@@ -21,13 +21,14 @@ faster it gets there.
   sweep-equivalents, timed by the grader. Loosening a tolerance, damping the physics or declaring
   convergence on another quantity cannot pass.
 * **Frontier agents pass, with domain knowledge.** Full GMRES on the
-  source-iteration operator already passes every gate; in the k=5 run every
-  valid Claude Opus 5 trial went further and built a physics-based
-  preconditioner (coarse-angle transport or moment system) that makes the
-  iteration count nearly Knudsen-independent — in 1–2 hours each. The
-  benchmark's signal is therefore the *score spread* across agents, models
-  and scaffolds (3.3x within one model here), and the gate pass rate of
-  weaker ones — not whether the strongest model passes.
+  source-iteration operator already passes every gate (oracle: 34x); in
+  two k=5 runs every valid Claude Opus 5 trial went further and built a
+  physics-based low-order preconditioner that makes the iteration count
+  nearly Knudsen-independent — in 1–2 hours each — scoring 548x – 974x
+  under the final rule. The benchmark's signal is therefore the *score
+  spread* across agents, models and scaffolds (1.8x within one model here),
+  and the gate pass rate of weaker ones — not whether the strongest model
+  passes.
 * **The published accelerated scheme does not pass.** The solver reproduces
   the published GSIS iteration counts on the published 2-D test points
   exactly (CIS 5/5, GSIS 4/5), and at every one of those points GSIS
@@ -88,6 +89,7 @@ pathology preserved in both families, worst verification 346 s.
 |---|---|---|---|---|---|
 | isothermal-only precursor | Claude Opus 5 + Claude Code | 1 | 1/1 | — | 44 min, $7; full GMRES, self-written |
 | t01-square | Claude Opus 5 + Claude Code | 5 (4 valid) | 4/4 | 989x – 3 293x (sweep-count rule) | all four built a physics-based preconditioner for GMRES (3x coarse-angle transport, 1x moment system), 6–37 sweeps per cell; 1 trial invalid (account quota). Solutions lost to a reboot before re-scoring under the sweep-equivalent rule; see `experiments/results/t01-square/NOTES.md`. |
+| t01-square, sweep-equivalent rule | Claude Opus 5 + Claude Code | 5 | **5/5** | **548x – 974x** (geo-mean 762x; oracle 34x) | every trial: GMRES + a physics-based low-order preconditioner (coarse-angle x3, sparse low-order x1, diffusion-type x1); nobody touched the sweep kernel; 3/5 hit the 2 h cap with a passing solution in place. Solutions archived. `experiments/results/t01-square-C2/NOTES.md`. |
 
 Transcripts and per-cell scores are under `experiments/results/`.
 

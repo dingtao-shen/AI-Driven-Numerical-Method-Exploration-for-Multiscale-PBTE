@@ -16,3 +16,14 @@ trial 4: agent running ...
 trial 4: gate PASS   score 861.8x   10/10 cells   agent 110 min
 
 trial 5: agent running ...
+trial 5: gate PASS   score 576.3x   10/10 cells   agent 120 min   (timed out; graded as left)
+
+ trial  gate    score  cells  minutes
+     1  True   547.7x  10/10      120
+     2  True   921.4x  10/10      120
+     3  True   973.6x  10/10       84
+     4  True   861.8x  10/10      110
+     5  True   576.3x  10/10      120
+
+5/5 passed every gate
+score range 547.7x .. 973.6x -- spread across trials/models is the benchmark's signal now, not pass rate

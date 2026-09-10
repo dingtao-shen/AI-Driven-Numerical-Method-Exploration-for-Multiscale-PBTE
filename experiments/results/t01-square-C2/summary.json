@@ -1,0 +1,114 @@
+{
+  "task": "t01-square",
+  "model": "opus",
+  "k": 5,
+  "isolation": "dir",
+  "solved": 5,
+  "trials": [
+    {
+      "trial": 1,
+      "gate": true,
+      "score": 547.712802565106,
+      "families": {
+        "F1": [
+          true,
+          520.58813771322
+        ],
+        "F2": [
+          true,
+          576.2507678555288
+        ]
+      },
+      "cells_passed": 10,
+      "cells": 10,
+      "agent_wall": 7200.0,
+      "timed_out": true,
+      "agent_returncode": -1,
+      "sandbox": "/home/dtshen/rollout-sandboxes/t01-square-C2/trial_01"
+    },
+    {
+      "trial": 2,
+      "gate": true,
+      "score": 921.4141623240902,
+      "families": {
+        "F1": [
+          true,
+          958.0790735171192
+        ],
+        "F2": [
+          true,
+          886.1523876256906
+        ]
+      },
+      "cells_passed": 10,
+      "cells": 10,
+      "agent_wall": 7200.0,
+      "timed_out": true,
+      "agent_returncode": -1,
+      "sandbox": "/home/dtshen/rollout-sandboxes/t01-square-C2/trial_02"
+    },
+    {
+      "trial": 3,
+      "gate": true,
+      "score": 973.590101181296,
+      "families": {
+        "F1": [
+          true,
+          910.745022159962
+        ],
+        "F2": [
+          true,
+          1040.7717440718802
+        ]
+      },
+      "cells_passed": 10,
+      "cells": 10,
+      "agent_wall": 5030.415049850999,
+      "timed_out": false,
+      "agent_returncode": 0,
+      "sandbox": "/home/dtshen/rollout-sandboxes/t01-square-C2/trial_03"
+    },
+    {
+      "trial": 4,
+      "gate": true,
+      "score": 861.776482530467,
+      "families": {
+        "F1": [
+          true,
+          788.6936429413472
+        ],
+        "F2": [
+          true,
+          941.6314084552772
+        ]
+      },
+      "cells_passed": 10,
+      "cells": 10,
+      "agent_wall": 6598.608050832008,
+      "timed_out": false,
+      "agent_returncode": 0,
+      "sandbox": "/home/dtshen/rollout-sandboxes/t01-square-C2/trial_04"
+    },
+    {
+      "trial": 5,
+      "gate": true,
+      "score": 576.2710935229649,
+      "families": {
+        "F1": [
+          true,
+          617.924400218897
+        ],
+        "F2": [
+          true,
+          537.4255703651012
+        ]
+      },
+      "cells_passed": 10,
+      "cells": 10,
+      "agent_wall": 7200.0,
+      "timed_out": true,
+      "agent_returncode": -1,
+      "sandbox": "/home/dtshen/rollout-sandboxes/t01-square-C2/trial_05"
+    }
+  ]
+}
