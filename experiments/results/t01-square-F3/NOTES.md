@@ -3,8 +3,9 @@
 Run 2026-09-10 on the three-family task (`a711541`): F1 isothermal, F2
 diffusely reflecting sides, F3 periodic sides; five `(Kn_R, Kn_N)` points
 each; cap 6 000; own-sweep-unit score; grading pinned to one thread. Oracle
-under this rule: F1 >= 36x, F2 >= 32x, F3 (measured at validation) — see
-`oracle_score.json` once written. Sandboxes under
+under this rule: **28.3x** (F1 >= 35.1x, F2 >= 34.9x, F3 >= 18.4x; `oracle_score.json`).
+F3 is its weakest family too: the periodic-trace block makes its Krylov vectors
+seven times longer (27 600 entries) and the basis 617 MB against ~220 MB elsewhere. Sandboxes under
 `~/rollout-sandboxes/t01-square-F3/`; solutions archived here as diff +
 tarball; transcripts as stream-json (`trial_XX_transcript.jsonl`), which
 survive a timeout.
