@@ -1,0 +1,9 @@
+task       t01-square
+model      opus   isolation dir   k=5
+sandboxes  /home/dtshen/rollout-sandboxes/t01-square-F3
+results    /home/dtshen/workspace/StiKine-Bench/experiments/results/t01-square-F3
+
+trial 1: agent running ...
+trial 1: gate PASS   score 689.1x   15/15 cells   agent 120 min   (timed out; graded as left)
+
+trial 2: agent running ...
