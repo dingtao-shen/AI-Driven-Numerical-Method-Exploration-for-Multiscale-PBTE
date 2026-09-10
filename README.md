@@ -40,7 +40,7 @@ faster it gets there.
 
 ```
 solver-python/          the solver (pybte): CIS, GSIS, Krylov; 156 tests
-tasks/t01-square/       the task: two wall families x five (Kn_R, Kn_N) cells
+tasks/t01-square/       the task: three wall families x five (Kn_R, Kn_N) cells
   ablation.yaml         what make_env.py removes to build environment/
   environment/          GENERATED - what the agent sees; scrubbed, canaried
   verifier/             gates + score; its own pristine solver, cases, mesh
@@ -55,7 +55,7 @@ PROPOSAL_2_BENCHMARK_PROJECT.md   design and plan
 ## The task
 
 Same square, same discretisation (200 elements, `DEG = 2`, `10 x 20`
-angles, `tol = 1e-8`), two boundary families, the five `(Kn_R, Kn_N)` pairs
+angles, `tol = 1e-8`), three boundary families, the five `(Kn_R, Kn_N)` pairs
 of the reference publication's 2-D test:
 
 | cell | regime | source iteration | oracle (Krylov) | speed-up |
@@ -70,9 +70,17 @@ of the reference publication's 2-D test:
 | F2 (0.1, 1e5) | transition | 643 | 47 | gate only |
 | F2 (1, 1) | ballistic | 75 | 23 | gate only |
 | F2 (10, 0.01) | hydrodynamic | 2 444 | 688 | 3.6x |
+| F3 (0.001, 1e5) | deep diffusive | > 200 000 | 1 063 | >= 188x |
+| F3 (0.01, 1e5) | diffusive | 32 230 | 286 | 113x |
+| F3 (0.1, 1e5) | transition | 624 | 55 | gate only |
+| F3 (1, 1) | ballistic | 70 | 27 | gate only |
+| F3 (10, 0.01) | hydrodynamic | 1 920 | 775 | 2.5x |
 
 F1: all four walls isothermal. F2: east and west walls diffusely
-reflecting (adiabatic). Score = geometric mean of the speed-ups per family,
+reflecting (adiabatic). F3: east and west walls periodic — the one family
+where a sweep is no longer an exact function of the moments alone, because
+a periodic face's partner cannot always be placed upwind; the oracle carries
+the partner's outflow in its state. Score = geometric mean of the speed-ups per family,
 then across families, in **sweep-equivalents** (end-to-end wall-clock over
 the time of one fine sweep, both timed by the verifier in-session, setup
 included) so that work moved out of the sweep is paid for at its real cost.
@@ -111,10 +119,8 @@ Requirements: Python >= 3.10, numpy, scipy, pyyaml; numba optional
 
 ## Not in v0
 
-* A third family with periodic side walls. It is the one configuration
-  where the unaided GMRES solution declares itself inapplicable and falls
-  back to source iteration; it needs a periodic-capable oracle first.
-* Other geometries, non-gray physics, other kinetic equations.
+* Geometries other than the square; non-gray physics; other kinetic
+  equations.
 * Any claim that passing requires domain knowledge. It does not — plain
   GMRES passes — and that claim was tested and withdrawn. What the k=5 run
   showed instead is that frontier agents *use* domain knowledge to score

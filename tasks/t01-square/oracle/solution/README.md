@@ -35,13 +35,15 @@ solve for that direction.
 
 ## Cases
 
-Two boundary-condition families on the same square and the same
+Three boundary-condition families on the same square and the same
 discretisation (200 elements, `DEG = 2`, a `10 x 20` angular mesh,
 `tol = 1e-8`), each at five `(tau_R, tau_N)` pairs spanning the diffusive,
 transition, ballistic and hydrodynamic regimes:
 
     F1_*   all four walls isothermal, T = 1 on the north wall
     F2_*   east and west walls diffusely reflecting (adiabatic)
+    F3_*   east and west walls periodic (the mesh's two side boundaries are
+           paired; `bc.py` matches their faces)
 
 A diffusely reflecting wall re-emits, isotropically, the energy that hits
 it, so its emission depends on the solution: `bc.py` recomputes it from the

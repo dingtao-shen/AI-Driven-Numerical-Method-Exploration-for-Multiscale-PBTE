@@ -8,6 +8,9 @@ plus the fields that were implicit in the Fortran and are made explicit here:
 * ``scheme.stabilisation`` -- the HDG ``ST(1:3)``
 * ``restart``              -- explicit, off by default
 * ``iteration.true_residual`` -- report a true transport residual too
+* ``scheme.method``        -- ``source`` (default) or ``krylov``: GMRES on
+                              the outer iteration, same fixed point as CIS;
+                              see docs/KRYLOV.md
 * ``scheme.defect_*``      -- experimental fixed-point repair, off by
                               default; see docs/DEFECT_CORRECTION.md
 * ``performance``          -- storage/kernel choices, no physics

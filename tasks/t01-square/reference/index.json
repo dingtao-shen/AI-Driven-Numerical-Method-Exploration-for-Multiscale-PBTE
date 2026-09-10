@@ -82,5 +82,46 @@
     "mass": 0.49999998774034926,
     "config_hash": "814251191e3d4b3e601f8288bd009b5b76e2fd9614b46033b26b1d263b756066",
     "cis_iterations": null
+  },
+  "F3_10_1e-2": {
+    "iterations": 914,
+    "transport_residual": 3.520045380314754e-15,
+    "mass": 0.49999999999193867,
+    "config_hash": "58a52e08b41f8b70805b3d404ccb506e484f6948e3fe7a61de1334202b7917d2",
+    "cis_iterations": 3049,
+    "cis_gap": 5.2779250607557284e-08,
+    "cis_transport_residual": 8.610941685869219e-09
+  },
+  "F3_1_1": {
+    "iterations": 27,
+    "transport_residual": 1.0110342470627644e-15,
+    "mass": 0.4999999999961029,
+    "config_hash": "7c5b6436b677322567fce63b2f4732e9748911474bfc74501ca94e953889f34a",
+    "cis_iterations": 88,
+    "cis_gap": 3.618603565893774e-10,
+    "cis_transport_residual": 1.8472145869243457e-11
+  },
+  "F3_1e-1": {
+    "iterations": 55,
+    "transport_residual": 1.1969632809586108e-15,
+    "mass": 0.49999999999004224,
+    "config_hash": "759c5c173c9460e109957d0c9d6343a917f3c742936d3798e993cf6072c885be",
+    "cis_iterations": 821,
+    "cis_gap": 4.401134259201019e-09,
+    "cis_transport_residual": 4.086481756166894e-11
+  },
+  "F3_1e-2": {
+    "iterations": 293,
+    "transport_residual": 2.170112342232227e-15,
+    "mass": 0.4999999998223098,
+    "config_hash": "c685c5808a74f1550e1022d9a59c9771776dcf5534988e4c2038637b406a3dd9",
+    "cis_iterations": null
+  },
+  "F3_1e-3": {
+    "iterations": 1072,
+    "transport_residual": 1.1045465598086107e-15,
+    "mass": 0.49999998773732957,
+    "config_hash": "03f8a7910a2133fb42ced9da25be0a09b6fd24e64f99cc31382334408317c0ac",
+    "cis_iterations": null
   }
 }

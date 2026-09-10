@@ -28,7 +28,8 @@ Grading has two parts: gates, which every case must pass, and a score.
 
 **Gates** (all fifteen cases):
 
-1. **It converges** inside its own `tmax`.
+1. **It converges** inside its own `tmax` (6 000 iterations in the shipped cases — the
+   cap exists to stop the unaccelerated solver's futile iterations, not to constrain you).
 2. **The converged distribution solves the discrete transport system.** The
    grader computes the residual of that system directly from your converged
    distribution, with its own copy of the discretisation, and requires

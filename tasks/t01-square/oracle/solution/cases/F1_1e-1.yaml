@@ -1,5 +1,5 @@
 # Isothermal square: T = 1 on the north wall, 0 on the other three.  Kn_R = 0.1, Kn_N = 100000.
-iteration:  {tol: 1.0e-8, tmax: 30000, true_residual: false}
+iteration:  {tol: 1.0e-8, tmax: 6000, true_residual: false}
 velmesh:    {npole: 10, nazim: 20}
 dg:         {deg: 2}
 flow:       {cv: 1.0, vg: 1.0, tau_r: 0.1, tau_n: 100000}

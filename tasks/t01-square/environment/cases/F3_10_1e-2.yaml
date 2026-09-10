@@ -1,0 +1,13 @@
+# Square with periodic east and west walls; T = 1 north, 0 south.  Kn_R = 10, Kn_N = 0.01.
+iteration:  {tol: 1.0e-8, tmax: 6000, true_residual: false}
+velmesh:    {npole: 10, nazim: 20}
+dg:         {deg: 2}
+flow:       {cv: 1.0, vg: 1.0, tau_r: 10, tau_n: 0.01}
+mesh:       {file: ../meshes/C1_Nx11_Ny11.msh}
+boundaries:
+  - {name: SWall,  phyid: 11, type: thermalising, temp: 0.0}
+  - {name: NWall,  phyid: 12, type: thermalising, temp: 1.0}
+  - {name: Master, phyid: 13, type: periodic, temp: 0.0, xoff: -1.0}
+  - {name: Slave,  phyid: 14, type: periodic, temp: 0.0, xoff:  1.0}
+restart:    {enabled: false, path: null}
+output:     {dir: ../out/F3_10_1e-2, field: false, runtime_log: false, run_record: true}

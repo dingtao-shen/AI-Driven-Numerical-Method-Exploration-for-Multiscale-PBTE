@@ -492,12 +492,14 @@ Eleven families, all realisable from this codebase. `solver/` and `oracle/` give
 ### T01 — Square-domain acceleration, two wall families `[flagship, built]`
 `tasks/t01-square`, §2. Baseline: source iteration only. Ask: converge every cell to the
 shipped solver's own fixed point, fast. Oracle: Krylov (§1.4). Gates and score as in §2.
-Families: F1 isothermal, F2 diffusely reflecting side walls. **F3 (periodic side walls)
-is next**: it is the one configuration where the unaided GMRES solution declares itself
-inapplicable (the partner element cannot be placed upwind, so one sweep is no longer an
-exact evaluation of the map) and falls back to source iteration — measured: it fails the
-convergence gate on the two stiff cells. F3 needs a periodic-capable oracle first; the
-periodic temperature-jump boundary of the publication's long-film test is not implemented.
+Families: F1 isothermal, F2 diffusely reflecting side walls, **F3 periodic side walls**.
+F3 is the configuration where the unaided GMRES solution of the first k=5 declared itself
+inapplicable — the partner element cannot be placed upwind, so one sweep is no longer an
+exact function of the moments — and fell back to source iteration, failing the convergence
+gate on the two stiff cells. The oracle handles it by carrying the partner element's
+outflow on every periodic face, for every direction, in its state (24 000 extra entries);
+it converges to CIS's fixed point on all five F3 points in 27 .. 1 063 sweeps, no more than
+on F2. The mechanism is ablated out of the environment and its name is a forbidden term.
 
 ### T02 — Hydrodynamic-limit acceleration
 Sweep `TAU_N → 0` at fixed large `TAU_R` — a *different* stiff limit, in which a

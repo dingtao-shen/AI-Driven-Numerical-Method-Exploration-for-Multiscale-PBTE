@@ -1,5 +1,5 @@
 diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/__init__.py oracle/solution/pybte/__init__.py
---- environment/pybte/__init__.py	2026-09-08 16:38:19.796713648 +0800
+--- environment/pybte/__init__.py	2026-09-10 17:34:36.764408233 +0800
 +++ oracle/solution/pybte/__init__.py	2026-09-04 19:43:50.893692505 +0800
 @@ -1,20 +1,28 @@
  """pybte -- steady 2D2V gray linear Callaway phonon BTE, nodal DG + discrete ordinates.
@@ -34,7 +34,7 @@ diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/__init__.py oracle/solutio
  
  __version__ = "1.0.0"
 diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/__main__.py oracle/solution/pybte/__main__.py
---- environment/pybte/__main__.py	2026-09-08 16:38:19.801918575 +0800
+--- environment/pybte/__main__.py	2026-09-10 17:34:36.769077263 +0800
 +++ oracle/solution/pybte/__main__.py	2026-09-05 12:17:48.505429001 +0800
 @@ -26,6 +26,8 @@
          case.iteration.true_residual = True
@@ -74,8 +74,97 @@ diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/__main__.py oracle/solutio
      r.add_argument("--true-residual", action="store_true")
      r.add_argument("--progress", type=int, default=0,
                     help="print every N iterations (0 = silent)")
+diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/_kernels.py oracle/solution/pybte/_kernels.py
+--- environment/pybte/_kernels.py	2026-09-10 17:34:36.772024936 +0800
++++ oracle/solution/pybte/_kernels.py	2026-09-10 15:18:19.516166976 +0800
+@@ -170,8 +170,17 @@
+ @njit(cache=True, inline="always")
+ def _add_face_sources(src, i, d, cxd, cyd, cv, pi,
+                       ttfc, nx, ny, tri_faces, face_bc, neighbour,
+-                      periodic_tri, bc_type, bc_temp, flux_wall, vdf):
+-    """Upwind inflow, dispatching on the boundary type."""
++                      periodic_tri, bc_type, bc_temp, flux_wall, vdf,
++                      pbuf, use_pbuf):
++    """Upwind inflow, dispatching on the boundary type.
++
++    ``pbuf[d, fc, :]`` is an externally supplied periodic inflow (the partner
++    element's DOFs); with ``use_pbuf`` the periodic branch reads it instead of
++    the partner's current ``vdf``.  That is what makes one sweep an exact
++    function of an explicit state when periodic faces are present: the
++    partner is not necessarily upwind in the sweep order, so reading its
++    ``vdf`` would read a lagged value.  Source iteration never sets the
++    flag, so its behaviour is untouched."""
+     nd = src.shape[0]
+     for il in range(3):
+         speed = cxd * nx[i, il] + cyd * ny[i, il]
+@@ -191,7 +200,10 @@
+             if typ == 3:
+                 iext = periodic_tri[fc]
+                 for l in range(nd):
+-                    fl = vdf[d, iext, l]
++                    if use_pbuf:
++                        fl = pbuf[d, fc, l]
++                    else:
++                        fl = vdf[d, iext, l]
+                     for m in range(nd):
+                         src[m] -= (w * ttfc[i, il, m, l]) * fl
+             elif typ == 2:
+@@ -207,7 +219,7 @@
+ def sweep_precomputed(order, cxv, cyv, cv, vg, tau_r, tau_n, pi,
+                       mass, ttfc, nx, ny, tri_faces, face_bc, neighbour,
+                       periodic_tri, bc_type, bc_temp, flux_wall,
+-                      ts, qxs, qys, lu, piv, vdf):
++                      ts, qxs, qys, lu, piv, vdf, pbuf, use_pbuf):
+     """One transport sweep using pre-factorised element operators."""
+     ndir = cxv.shape[0]
+     n_tris = order.shape[1]
+@@ -221,7 +233,7 @@
+             _fill_a_src(src, i, cxd, cyd, cv, vg, tau_r, tau_n, pi, mass, ts, qxs, qys)
+             _add_face_sources(src, i, d, cxd, cyd, cv, pi, ttfc, nx, ny,
+                               tri_faces, face_bc, neighbour, periodic_tri,
+-                              bc_type, bc_temp, flux_wall, vdf)
++                              bc_type, bc_temp, flux_wall, vdf, pbuf, use_pbuf)
+             lu_solve_inplace(lu[d, i], piv[d, i], src)
+             for m in range(nd):
+                 vdf[d, i, m] = src[m]
+@@ -231,7 +243,7 @@
+ def sweep_onthefly(order, cxv, cyv, cv, vg, tau_r, tau_n, tau_c, pi,
+                    mass, gx, gy, fcm, ttfc, nx, ny, tri_faces, face_bc,
+                    neighbour, periodic_tri, bc_type, bc_temp, flux_wall,
+-                   ts, qxs, qys, vdf):
++                   ts, qxs, qys, vdf, pbuf, use_pbuf):
+     """One transport sweep, re-factorising ``A_SOL`` exactly as the Fortran
+     does.  Slower, but has no ``O(N_TRIS*NDIR*NDOF^2)`` memory cost."""
+     ndir = cxv.shape[0]
+@@ -250,7 +262,7 @@
+             _fill_a_src(src, i, cxd, cyd, cv, vg, tau_r, tau_n, pi, mass, ts, qxs, qys)
+             _add_face_sources(src, i, d, cxd, cyd, cv, pi, ttfc, nx, ny,
+                               tri_faces, face_bc, neighbour, periodic_tri,
+-                              bc_type, bc_temp, flux_wall, vdf)
++                              bc_type, bc_temp, flux_wall, vdf, pbuf, use_pbuf)
+             lu_factor_inplace(a, p)
+             lu_solve_inplace(a, p, src)
+             for m in range(nd):
+@@ -264,7 +276,7 @@
+ def transport_residual(cxv, cyv, domega, cv, vg, tau_r, tau_n, tau_c, pi,
+                        mass, gx, gy, fcm, ttfc, nx, ny, tri_faces, face_bc,
+                        neighbour, periodic_tri, bc_type, bc_temp, flux_wall,
+-                       ts, qxs, qys, vdf, out_num, out_den):
++                       ts, qxs, qys, vdf, out_num, out_den, pbuf):
+     """``||A_SOL f - A_SRC||`` with *no* sweep: a genuine residual of the
+     coupled discrete system, zero exactly at the fixed point."""
+     ndir = cxv.shape[0]
+@@ -283,7 +295,7 @@
+             _fill_a_src(src, i, cxd, cyd, cv, vg, tau_r, tau_n, pi, mass, ts, qxs, qys)
+             _add_face_sources(src, i, d, cxd, cyd, cv, pi, ttfc, nx, ny,
+                               tri_faces, face_bc, neighbour, periodic_tri,
+-                              bc_type, bc_temp, flux_wall, vdf)
++                              bc_type, bc_temp, flux_wall, vdf, pbuf, False)
+             for m in range(nd):
+                 r = -src[m]
+                 for l in range(nd):
 diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/_numba.py oracle/solution/pybte/_numba.py
---- environment/pybte/_numba.py	2026-09-08 16:38:19.796829043 +0800
+--- environment/pybte/_numba.py	2026-09-10 17:34:36.764510774 +0800
 +++ oracle/solution/pybte/_numba.py	2026-09-06 13:07:47.300193739 +0800
 @@ -1,4 +1,4 @@
 -"""Optional numba compilation.
@@ -988,7 +1077,7 @@ diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/acceleration/local_solve.p
 +    uq += np.einsum("ilpr,ril->pi", aa_trace, traces, optimize=True)
 +    return uq
 diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/analytic.py oracle/solution/pybte/analytic.py
---- environment/pybte/analytic.py	2026-09-08 16:38:19.802215709 +0800
+--- environment/pybte/analytic.py	2026-09-10 17:34:36.769211436 +0800
 +++ oracle/solution/pybte/analytic.py	2026-09-05 23:06:06.936904690 +0800
 @@ -11,7 +11,8 @@
  odd-harmonic series; the mean over the square is 1/4.
@@ -1001,7 +1090,7 @@ diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/analytic.py oracle/solutio
      q = -kappa grad T
  """
 diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/bc.py oracle/solution/pybte/bc.py
---- environment/pybte/bc.py	2026-09-08 16:38:19.802360120 +0800
+--- environment/pybte/bc.py	2026-09-10 17:34:36.769312024 +0800
 +++ oracle/solution/pybte/bc.py	2026-09-06 13:07:47.299483472 +0800
 @@ -148,8 +148,9 @@
              # its own node 2.  A periodic pair is normally traversed in
@@ -1016,9 +1105,9 @@ diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/bc.py oracle/solution/pybt
              b1 = mesh.nodes[mesh.face_nodes[pair, 0]]
              b2 = mesh.nodes[mesh.face_nodes[pair, 1]]
 diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/config.py oracle/solution/pybte/config.py
---- environment/pybte/config.py	2026-09-08 16:38:19.803932568 +0800
-+++ oracle/solution/pybte/config.py	2026-09-08 16:49:29.149579564 +0800
-@@ -3,6 +3,9 @@
+--- environment/pybte/config.py	2026-09-10 17:34:36.773249997 +0800
++++ oracle/solution/pybte/config.py	2026-09-10 17:34:36.884724501 +0800
+@@ -3,8 +3,14 @@
  The mapping is one-to-one with the Fortran namelists,
  plus the fields that were implicit in the Fortran and are made explicit here:
  
@@ -1027,8 +1116,13 @@ diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/config.py oracle/solution/
 +* ``scheme.stabilisation`` -- the HDG ``ST(1:3)``
  * ``restart``              -- explicit, off by default
  * ``iteration.true_residual`` -- report a true transport residual too
++* ``scheme.method``        -- ``source`` (default) or ``krylov``: GMRES on
++                              the outer iteration, same fixed point as CIS;
++                              see docs/KRYLOV.md
  * ``scheme.defect_*``      -- experimental fixed-point repair, off by
-@@ -50,11 +53,61 @@
+                               default; see docs/DEFECT_CORRECTION.md
+ * ``performance``          -- storage/kernel choices, no physics
+@@ -50,11 +56,61 @@
  
  @dataclass
  class Scheme:
@@ -1091,7 +1185,7 @@ diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/config.py oracle/solution/
          if self.on_cycle not in ("raise", "break"):
              raise ValueError("scheme.on_cycle must be 'raise' or 'break'")
  
-@@ -83,12 +136,14 @@
+@@ -83,12 +139,14 @@
      vg: float = 1.0
      tau_r: float = 1.0e-3
      tau_n: float = 1.0e5
@@ -1106,7 +1200,7 @@ diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/config.py oracle/solution/
          if self.tau_r <= 0.0 or self.tau_n <= 0.0:
              raise ValueError("tau_r and tau_n must be positive")
          if self.vg <= 0.0:
-@@ -197,6 +252,10 @@
+@@ -197,6 +255,10 @@
              raise ValueError("nazim must be >= 2 after the even-ing step")
          if self.dg.deg not in NP_TRI_BY_DEG:
              raise ValueError(f"deg must be one of {sorted(NP_TRI_BY_DEG)}")
@@ -1117,7 +1211,7 @@ diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/config.py oracle/solution/
  
      @property
      def ndof_tri(self) -> int:
-@@ -297,3 +356,125 @@
+@@ -297,3 +359,125 @@
  # control.in -> Case
  # --------------------------------------------------------------------------
  _NML_RE = re.compile(r"&(\w+)(.*?)^\s*/\s*$", re.S | re.M)
@@ -1244,7 +1338,7 @@ diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/config.py oracle/solution/
 +        basedir=str(Path(path).parent),
 +    )
 diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/driver.py oracle/solution/pybte/driver.py
---- environment/pybte/driver.py	2026-09-08 16:38:19.803773568 +0800
+--- environment/pybte/driver.py	2026-09-10 17:34:36.770501806 +0800
 +++ oracle/solution/pybte/driver.py	2026-09-08 15:43:22.864053953 +0800
 @@ -5,7 +5,8 @@
      STEP = 1
@@ -1345,7 +1439,7 @@ diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/driver.py oracle/solution/
              if c.output.npz:
                  np.savez_compressed(out / "field.npz", px=px, py=py, triid=triid,
 diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/io_output.py oracle/solution/pybte/io_output.py
---- environment/pybte/io_output.py	2026-09-08 16:38:19.802921577 +0800
+--- environment/pybte/io_output.py	2026-09-10 17:34:36.769803693 +0800
 +++ oracle/solution/pybte/io_output.py	2026-09-06 13:07:47.299842332 +0800
 @@ -48,6 +48,7 @@
      setup_wall_clock: float = 0.0
@@ -1389,8 +1483,8 @@ diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/io_output.py oracle/soluti
  def write_tecplot(path, px, py, arrays, names):
 diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/krylov.py oracle/solution/pybte/krylov.py
 --- environment/pybte/krylov.py	1970-01-01 08:00:00.000000000 +0800
-+++ oracle/solution/pybte/krylov.py	2026-09-08 15:42:58.027596448 +0800
-@@ -0,0 +1,391 @@
++++ oracle/solution/pybte/krylov.py	2026-09-10 15:27:47.169210954 +0800
+@@ -0,0 +1,414 @@
 +"""Krylov solution of the outer iteration.
 +
 +One outer step of source iteration is the affine map
@@ -1422,10 +1516,13 @@ diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/krylov.py oracle/solution/
 +and the post-sweep distribution depends on the moments and the boundary
 +inflow only.  A diffusely reflecting wall re-emits what it received, so its
 +emission is appended to the state; it is linear in the distribution and the
-+map stays affine.  Two things break exactness and are refused by
-+:func:`applicable`: a direction whose sweep graph had a cycle broken (part
-+of the inflow is lagged) and periodic faces (the partner element cannot be
-+placed upwind, so its outflow is lagged too).
++map stays affine.  A periodic face takes its inflow from a partner element the sweep
++order cannot always place upwind, so reading the partner's current
++distribution would read a lagged value; instead the partner's DOFs on every
++periodic face, for every direction, are made part of the state
++(``SweepContext.pbuf``) and the sweep reads them from there.  What remains
++refused by :func:`applicable` is a direction whose sweep graph had a cycle
++broken, where part of the inflow is lagged with no state to hold it.
 +"""
 +from __future__ import annotations
 +
@@ -1448,10 +1545,6 @@ diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/krylov.py oracle/solution/
 +        return False, ("the sweep ordering has broken cycles: part of the "
 +                       "inflow is lagged, so one sweep is not a function of "
 +                       "the state alone")
-+    if solver.bcdata.has_periodic:
-+        return False, ("periodic faces take their inflow from a partner the "
-+                       "ordering cannot place upwind, so one sweep is not a "
-+                       "function of the state alone")
 +    return True, ""
 +
 +
@@ -1465,8 +1558,16 @@ diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/krylov.py oracle/solution/
 +        self.nmom = 3 * self.nd * self.nt
 +        self.wall = bool(solver.bcdata.has_nonthermalising)
 +        self.nwall = int(solver.bcdata.flux_wall.size) if self.wall else 0
-+        self.n = self.nmom + self.nwall
++        # periodic faces: the partner element's DOFs, every face, every direction
++        self.per = bool(solver.bcdata.has_periodic)
++        self.pfaces = (np.flatnonzero(solver.bcdata.periodic_tri >= 0) if self.per
++                       else np.zeros(0, dtype=np.int64))
++        self.ptri = solver.bcdata.periodic_tri[self.pfaces]
++        self.ndir = int(solver.vdf.shape[0])
++        self.nper = self.ndir * int(self.pfaces.size) * self.nd if self.per else 0
++        self.n = self.nmom + self.nwall + self.nper
 +        self.sweeps = 0
++        solver.ctx.use_pbuf = self.per
 +
 +    # -- packing ----------------------------------------------------------
 +    def scatter(self, u) -> None:
@@ -1477,7 +1578,10 @@ diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/krylov.py oracle/solution/
 +        np.copyto(m.qys, u[2 * k:3 * k].reshape(m.qys.shape))
 +        if self.wall:
 +            fw = self.s.bcdata.flux_wall
-+            np.copyto(fw, u[self.nmom:].reshape(fw.shape))
++            np.copyto(fw, u[self.nmom:self.nmom + self.nwall].reshape(fw.shape))
++        if self.per:
++            blk = u[self.nmom + self.nwall:].reshape(self.ndir, self.pfaces.size, self.nd)
++            self.s.ctx.pbuf[:, self.pfaces, :] = blk
 +
 +    def gather(self) -> np.ndarray:
 +        m = self.s.mom
@@ -1487,7 +1591,9 @@ diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/krylov.py oracle/solution/
 +        u[k:2 * k] = m.qxs.reshape(-1)
 +        u[2 * k:3 * k] = m.qys.reshape(-1)
 +        if self.wall:
-+            u[self.nmom:] = self.s.bcdata.flux_wall.reshape(-1)
++            u[self.nmom:self.nmom + self.nwall] = self.s.bcdata.flux_wall.reshape(-1)
++        if self.per:
++            u[self.nmom + self.nwall:] = self.s.vdf[:, self.ptri, :].reshape(-1)
 +        return u
 +
 +    # -- the map ----------------------------------------------------------
@@ -1657,6 +1763,16 @@ diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/krylov.py oracle/solution/
 +        raise ValueError(f"Krylov acceleration does not apply: {why}")
 +
 +    op = FixedPointOperator(solver)
++    try:
++        return _run_krylov(solver, op, callback, progress_every)
++    finally:
++        solver.ctx.use_pbuf = False
++
++
++def _run_krylov(solver, op, callback, progress_every):
++    c = solver.case
++    tol, tmax = c.iteration.tol, c.iteration.tmax
++    want_true = c.iteration.true_residual
 +    residuals: list[float] = []
 +    masses: list[float] = []
 +    true_res: list[float] = []
@@ -1728,7 +1844,8 @@ diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/krylov.py oracle/solution/
 +    return solver._record(len(residuals), converged, residuals, masses,
 +                          true_res if want_true else None, wall,
 +                          scheme="KRYLOV",
-+                          extra={"krylov_size": op.n, "krylov_basis_cap": cap,
++                          extra={"krylov_size": op.n, "krylov_periodic_state": op.nper,
++                                 "krylov_basis_cap": cap,
 +                                 "krylov_precond": precond is not None,
 +                                 "transport_residual": final})
 +
@@ -1783,7 +1900,7 @@ diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/krylov.py oracle/solution/
 +                                          uq[2 * nd:3 * nd].ravel()])
 +        return out
 diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/mesh/topology.py oracle/solution/pybte/mesh/topology.py
---- environment/pybte/mesh/topology.py	2026-09-08 16:38:19.802492096 +0800
+--- environment/pybte/mesh/topology.py	2026-09-10 17:34:36.769415266 +0800
 +++ oracle/solution/pybte/mesh/topology.py	2026-09-05 12:17:48.503642522 +0800
 @@ -1,8 +1,9 @@
  """Face extraction, connectivity and periodic pairing.
@@ -1798,9 +1915,48 @@ diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/mesh/topology.py oracle/so
  Face numbering, exactly as the Fortran produces it:
  
 diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/sweep.py oracle/solution/pybte/sweep.py
---- environment/pybte/sweep.py	2026-09-08 16:38:19.802615782 +0800
-+++ oracle/solution/pybte/sweep.py	2026-09-06 13:07:47.299098118 +0800
-@@ -168,6 +168,11 @@
+--- environment/pybte/sweep.py	2026-09-10 17:34:36.772858164 +0800
++++ oracle/solution/pybte/sweep.py	2026-09-10 15:22:42.236015065 +0800
+@@ -60,6 +60,10 @@
+     bc_type: np.ndarray
+     bc_temp: np.ndarray
+     flux_wall: np.ndarray
++    #: externally supplied periodic inflow, (ndir, n_faces, ndof); read by the
++    #: sweep only when ``use_pbuf`` -- the Krylov path's periodic state
++    pbuf: np.ndarray = None
++    use_pbuf: bool = False
+     mode: str = "precomputed"
+     kernel: str = "numba"
+     lu: np.ndarray | None = field(default=None, repr=False)
+@@ -91,6 +95,7 @@
+             periodic_tri=bcdata.periodic_tri,
+             bc_type=bcdata.bc_type, bc_temp=bcdata.bc_temp,
+             flux_wall=bcdata.flux_wall,
++            pbuf=np.zeros((cxv.size, mesh.n_faces, case.ndof_tri)),
+         )
+         set_num_threads(case.performance.threads)
+         ctx.kernel = case.performance.kernel if HAVE_NUMBA else "numpy"
+@@ -139,7 +144,8 @@
+                 self.mass, self.ttfc, self.nx, self.ny, self.tri_faces,
+                 self.face_bc, self.neighbour, self.periodic_tri,
+                 self.bc_type, self.bc_temp, self.flux_wall,
+-                mom.ts, mom.qxs, mom.qys, self.lu, self.piv, vdf)
++                mom.ts, mom.qxs, mom.qys, self.lu, self.piv, vdf,
++                self.pbuf, self.use_pbuf)
+         else:
+             _kernels.sweep_onthefly(
+                 self.order, self.cxv, self.cyv, self.cv, self.vg,
+@@ -147,7 +153,8 @@
+                 self.mass, self.gx, self.gy, self.fcm, self.ttfc,
+                 self.nx, self.ny, self.tri_faces, self.face_bc,
+                 self.neighbour, self.periodic_tri, self.bc_type,
+-                self.bc_temp, self.flux_wall, mom.ts, mom.qxs, mom.qys, vdf)
++                self.bc_temp, self.flux_wall, mom.ts, mom.qxs, mom.qys, vdf,
++                self.pbuf, self.use_pbuf)
+         self.sweep_count += 1
+ 
+     # -- true transport residual --------------------------------------------------------------
+@@ -168,6 +175,11 @@
          within a normalisation (1.52e-06 vs 1.52e-06 on the truncated
          ``tau_R = 1e-3`` run).  **Neither reveals the error**: see
          ``RunRecord.error_estimate`` for that.
@@ -1812,8 +1968,31 @@ diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/sweep.py oracle/solution/p
          """
          ndir = self.cxv.size
          num = np.zeros(ndir)
+@@ -178,7 +190,7 @@
+             self.mass, self.gx, self.gy, self.fcm, self.ttfc,
+             self.nx, self.ny, self.tri_faces, self.face_bc, self.neighbour,
+             self.periodic_tri, self.bc_type, self.bc_temp, self.flux_wall,
+-            mom.ts, mom.qxs, mom.qys, vdf, num, den)
++            mom.ts, mom.qxs, mom.qys, vdf, num, den, self.pbuf)
+         d = float(den.sum())
+         if d <= 0.0:
+             return float("nan")
+diff -ruN -x __pycache__ -x '*.pyc' environment/pybte/sweep_reference.py oracle/solution/pybte/sweep_reference.py
+--- environment/pybte/sweep_reference.py	2026-09-10 17:34:36.772958702 +0800
++++ oracle/solution/pybte/sweep_reference.py	2026-09-10 15:27:47.168460620 +0800
+@@ -66,6 +66,10 @@
+                 fc = int(ctx.tri_faces[i, il])
+                 bc = int(ctx.face_bc[fc])
+                 if bc < 0 or ctx.bc_type[bc] == 3:
++                    if bc >= 0 and ctx.use_pbuf:
++                        for l in range(nd):
++                            src -= (w * ctx.ttfc[i, il, :, l]) * ctx.pbuf[d, fc, l]
++                        continue
+                     iext = (int(ctx.neighbour[i, il]) if bc < 0
+                             else int(ctx.periodic_tri[fc]))
+                     for l in range(nd):
 diff -ruN -x __pycache__ -x '*.pyc' environment/pyproject.toml oracle/solution/pyproject.toml
---- environment/pyproject.toml	2026-09-08 16:38:19.800924505 +0800
+--- environment/pyproject.toml	2026-09-10 17:34:36.767545152 +0800
 +++ oracle/solution/pyproject.toml	2026-09-05 23:10:53.933057944 +0800
 @@ -5,13 +5,13 @@
  [project]

@@ -60,6 +60,10 @@ class SweepContext:
     bc_type: np.ndarray
     bc_temp: np.ndarray
     flux_wall: np.ndarray
+    #: externally supplied periodic inflow, (ndir, n_faces, ndof); read by the
+    #: sweep only when ``use_pbuf`` -- the Krylov path's periodic state
+    pbuf: np.ndarray = None
+    use_pbuf: bool = False
     mode: str = "precomputed"
     kernel: str = "numba"
     lu: np.ndarray | None = field(default=None, repr=False)
@@ -91,6 +95,7 @@ class SweepContext:
             periodic_tri=bcdata.periodic_tri,
             bc_type=bcdata.bc_type, bc_temp=bcdata.bc_temp,
             flux_wall=bcdata.flux_wall,
+            pbuf=np.zeros((cxv.size, mesh.n_faces, case.ndof_tri)),
         )
         set_num_threads(case.performance.threads)
         ctx.kernel = case.performance.kernel if HAVE_NUMBA else "numpy"
@@ -139,7 +144,8 @@ class SweepContext:
                 self.mass, self.ttfc, self.nx, self.ny, self.tri_faces,
                 self.face_bc, self.neighbour, self.periodic_tri,
                 self.bc_type, self.bc_temp, self.flux_wall,
-                mom.ts, mom.qxs, mom.qys, self.lu, self.piv, vdf)
+                mom.ts, mom.qxs, mom.qys, self.lu, self.piv, vdf,
+                self.pbuf, self.use_pbuf)
         else:
             _kernels.sweep_onthefly(
                 self.order, self.cxv, self.cyv, self.cv, self.vg,
@@ -147,7 +153,8 @@ class SweepContext:
                 self.mass, self.gx, self.gy, self.fcm, self.ttfc,
                 self.nx, self.ny, self.tri_faces, self.face_bc,
                 self.neighbour, self.periodic_tri, self.bc_type,
-                self.bc_temp, self.flux_wall, mom.ts, mom.qxs, mom.qys, vdf)
+                self.bc_temp, self.flux_wall, mom.ts, mom.qxs, mom.qys, vdf,
+                self.pbuf, self.use_pbuf)
         self.sweep_count += 1
 
     # -- true transport residual --------------------------------------------------------------
@@ -183,7 +190,7 @@ class SweepContext:
             self.mass, self.gx, self.gy, self.fcm, self.ttfc,
             self.nx, self.ny, self.tri_faces, self.face_bc, self.neighbour,
             self.periodic_tri, self.bc_type, self.bc_temp, self.flux_wall,
-            mom.ts, mom.qxs, mom.qys, vdf, num, den)
+            mom.ts, mom.qxs, mom.qys, vdf, num, den, self.pbuf)
         d = float(den.sum())
         if d <= 0.0:
             return float("nan")

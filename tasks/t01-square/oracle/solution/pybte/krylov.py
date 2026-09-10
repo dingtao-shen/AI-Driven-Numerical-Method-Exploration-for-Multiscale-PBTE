@@ -29,10 +29,13 @@ genuine topological order, so the sweep is an exact block-triangular solve
 and the post-sweep distribution depends on the moments and the boundary
 inflow only.  A diffusely reflecting wall re-emits what it received, so its
 emission is appended to the state; it is linear in the distribution and the
-map stays affine.  Two things break exactness and are refused by
-:func:`applicable`: a direction whose sweep graph had a cycle broken (part
-of the inflow is lagged) and periodic faces (the partner element cannot be
-placed upwind, so its outflow is lagged too).
+map stays affine.  A periodic face takes its inflow from a partner element the sweep
+order cannot always place upwind, so reading the partner's current
+distribution would read a lagged value; instead the partner's DOFs on every
+periodic face, for every direction, are made part of the state
+(``SweepContext.pbuf``) and the sweep reads them from there.  What remains
+refused by :func:`applicable` is a direction whose sweep graph had a cycle
+broken, where part of the inflow is lagged with no state to hold it.
 """
 from __future__ import annotations
 
@@ -55,10 +58,6 @@ def applicable(solver) -> tuple[bool, str]:
         return False, ("the sweep ordering has broken cycles: part of the "
                        "inflow is lagged, so one sweep is not a function of "
                        "the state alone")
-    if solver.bcdata.has_periodic:
-        return False, ("periodic faces take their inflow from a partner the "
-                       "ordering cannot place upwind, so one sweep is not a "
-                       "function of the state alone")
     return True, ""
 
 
@@ -72,8 +71,16 @@ class FixedPointOperator:
         self.nmom = 3 * self.nd * self.nt
         self.wall = bool(solver.bcdata.has_nonthermalising)
         self.nwall = int(solver.bcdata.flux_wall.size) if self.wall else 0
-        self.n = self.nmom + self.nwall
+        # periodic faces: the partner element's DOFs, every face, every direction
+        self.per = bool(solver.bcdata.has_periodic)
+        self.pfaces = (np.flatnonzero(solver.bcdata.periodic_tri >= 0) if self.per
+                       else np.zeros(0, dtype=np.int64))
+        self.ptri = solver.bcdata.periodic_tri[self.pfaces]
+        self.ndir = int(solver.vdf.shape[0])
+        self.nper = self.ndir * int(self.pfaces.size) * self.nd if self.per else 0
+        self.n = self.nmom + self.nwall + self.nper
         self.sweeps = 0
+        solver.ctx.use_pbuf = self.per
 
     # -- packing ----------------------------------------------------------
     def scatter(self, u) -> None:
@@ -84,7 +91,10 @@ class FixedPointOperator:
         np.copyto(m.qys, u[2 * k:3 * k].reshape(m.qys.shape))
         if self.wall:
             fw = self.s.bcdata.flux_wall
-            np.copyto(fw, u[self.nmom:].reshape(fw.shape))
+            np.copyto(fw, u[self.nmom:self.nmom + self.nwall].reshape(fw.shape))
+        if self.per:
+            blk = u[self.nmom + self.nwall:].reshape(self.ndir, self.pfaces.size, self.nd)
+            self.s.ctx.pbuf[:, self.pfaces, :] = blk
 
     def gather(self) -> np.ndarray:
         m = self.s.mom
@@ -94,7 +104,9 @@ class FixedPointOperator:
         u[k:2 * k] = m.qxs.reshape(-1)
         u[2 * k:3 * k] = m.qys.reshape(-1)
         if self.wall:
-            u[self.nmom:] = self.s.bcdata.flux_wall.reshape(-1)
+            u[self.nmom:self.nmom + self.nwall] = self.s.bcdata.flux_wall.reshape(-1)
+        if self.per:
+            u[self.nmom + self.nwall:] = self.s.vdf[:, self.ptri, :].reshape(-1)
         return u
 
     # -- the map ----------------------------------------------------------
@@ -264,6 +276,16 @@ def run_krylov(solver, callback=None, progress_every: int = 0):
         raise ValueError(f"Krylov acceleration does not apply: {why}")
 
     op = FixedPointOperator(solver)
+    try:
+        return _run_krylov(solver, op, callback, progress_every)
+    finally:
+        solver.ctx.use_pbuf = False
+
+
+def _run_krylov(solver, op, callback, progress_every):
+    c = solver.case
+    tol, tmax = c.iteration.tol, c.iteration.tmax
+    want_true = c.iteration.true_residual
     residuals: list[float] = []
     masses: list[float] = []
     true_res: list[float] = []
@@ -335,7 +357,8 @@ def run_krylov(solver, callback=None, progress_every: int = 0):
     return solver._record(len(residuals), converged, residuals, masses,
                           true_res if want_true else None, wall,
                           scheme="KRYLOV",
-                          extra={"krylov_size": op.n, "krylov_basis_cap": cap,
+                          extra={"krylov_size": op.n, "krylov_periodic_state": op.nper,
+                                 "krylov_basis_cap": cap,
                                  "krylov_precond": precond is not None,
                                  "transport_residual": final})
 
