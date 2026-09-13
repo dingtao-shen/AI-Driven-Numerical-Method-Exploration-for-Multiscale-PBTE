@@ -1,0 +1,157 @@
+{
+  "task": "t01-square",
+  "model": "opus",
+  "k": 5,
+  "isolation": "dir",
+  "solved": 5,
+  "voided": 0,
+  "trials": [
+    {
+      "trial": 1,
+      "gate": true,
+      "score": 799.7258768019254,
+      "families": {
+        "F1": [
+          true,
+          781.9700859694017
+        ],
+        "F2": [
+          true,
+          889.6039565302153
+        ],
+        "F3": [
+          true,
+          735.2526541224055
+        ]
+      },
+      "cells_passed": 15,
+      "cells": 15,
+      "agent_wall": 7200.0,
+      "timed_out": true,
+      "turns": null,
+      "cost_usd": null,
+      "events": 2207,
+      "agent_returncode": -1,
+      "sandbox": "/home/dtshen/rollout-sandboxes/t01-square-F3/trial_01",
+      "rescored": true
+    },
+    {
+      "trial": 2,
+      "gate": true,
+      "score": 839.3216444406634,
+      "families": {
+        "F1": [
+          true,
+          834.8354719562246
+        ],
+        "F2": [
+          true,
+          905.3280906377018
+        ],
+        "F3": [
+          true,
+          782.3090940305009
+        ]
+      },
+      "cells_passed": 15,
+      "cells": 15,
+      "agent_wall": 7200.0,
+      "timed_out": true,
+      "turns": null,
+      "cost_usd": null,
+      "events": 2179,
+      "agent_returncode": -1,
+      "sandbox": "/home/dtshen/rollout-sandboxes/t01-square-F3/trial_02",
+      "rescored": true
+    },
+    {
+      "trial": 3,
+      "gate": true,
+      "score": 455.8508189053793,
+      "families": {
+        "F1": [
+          true,
+          434.01366892852616
+        ],
+        "F2": [
+          true,
+          516.0310092736657
+        ],
+        "F3": [
+          true,
+          422.94998166389036
+        ]
+      },
+      "cells_passed": 15,
+      "cells": 15,
+      "agent_wall": 7200.0,
+      "timed_out": true,
+      "turns": null,
+      "cost_usd": null,
+      "events": 2317,
+      "agent_returncode": -1,
+      "sandbox": "/home/dtshen/rollout-sandboxes/t01-square-F3/trial_03",
+      "rescored": true
+    },
+    {
+      "trial": 4,
+      "gate": true,
+      "score": 1156.9523640524053,
+      "families": {
+        "F1": [
+          true,
+          1138.2419071073746
+        ],
+        "F2": [
+          true,
+          1295.5020464543497
+        ],
+        "F3": [
+          true,
+          1050.204219785079
+        ]
+      },
+      "cells_passed": 15,
+      "cells": 15,
+      "agent_wall": 7200.0,
+      "timed_out": true,
+      "turns": null,
+      "cost_usd": null,
+      "events": 1734,
+      "agent_returncode": -1,
+      "voided": null,
+      "sandbox": "/home/dtshen/rollout-sandboxes/t01-square-F3/trial_04",
+      "rescored": true
+    },
+    {
+      "trial": 5,
+      "gate": true,
+      "score": 1119.365667868796,
+      "families": {
+        "F1": [
+          true,
+          1029.8541167055666
+        ],
+        "F2": [
+          true,
+          1209.2413654453242
+        ],
+        "F3": [
+          true,
+          1126.2303927201174
+        ]
+      },
+      "cells_passed": 15,
+      "cells": 15,
+      "agent_wall": 7200.0,
+      "timed_out": true,
+      "turns": null,
+      "cost_usd": null,
+      "events": 2794,
+      "agent_returncode": -1,
+      "voided": null,
+      "sandbox": "/home/dtshen/rollout-sandboxes/t01-square-F3/trial_05",
+      "rescored": true
+    }
+  ]
+}

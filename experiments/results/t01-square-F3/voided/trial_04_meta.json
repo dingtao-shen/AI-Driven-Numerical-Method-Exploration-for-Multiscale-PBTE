@@ -1,0 +1,11 @@
+{
+  "events": 353,
+  "result_event": true,
+  "num_turns": 28,
+  "total_cost_usd": 2.2896885,
+  "duration_ms": 941087,
+  "is_error": true,
+  "subtype": "success",
+  "result": "You've hit your session limit \u00b7 resets 2:40am (Asia/Hong_Kong)",
+  "timed_out": false
+}

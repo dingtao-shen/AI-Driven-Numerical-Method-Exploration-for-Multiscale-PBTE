@@ -1,0 +1,1463 @@
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/README.md solution/README.md
+--- environment/README.md	2026-09-10 17:34:36.773351196 +0800
++++ solution/README.md	2026-09-14 04:45:52.129684324 +0800
+@@ -21,7 +21,12 @@
+ `pybte.analytic` carries that limit for the shipped cavity as a 200-term
+ series.
+ 
+-## How one iteration works
++## How the outer solve works
++
++One transport sweep followed by the moment update is an affine map on the
++moments (plus the diffuse-wall emission and, for periodic pairs, the lagged
++partner inflow), ``x -> L x + c``; the converged distribution is its fixed
++point.  The Fortran's source iteration,
+ 
+     while True:
+         sweep()                 # exact transport solve, one direction at a time,
+@@ -29,9 +34,21 @@
+         compute_moments()       # T, qx, qy from the distribution
+         if residual < tol: break
+ 
+-The sweep is Gauss-Seidel: within a direction each element reads inflow from
+-neighbours already updated in the same pass, which is what makes it an exact
+-solve for that direction.
++is Richardson's method on ``(I - L) x = c`` and stalls as the medium becomes
++optically thick (``rho -> 1``).  The default scheme (``scheme.accel:
++krylov``) solves that system with flexible GMRES instead -- one sweep per
++Krylov vector -- preconditioned by a *coarse-angle synthetic* solve: the same
++DG discretisation, tensors and boundary treatments with 4 (6 in the
++hydrodynamic regime) discrete directions, assembled as one sparse system and
++LU-factorised once (``pybte/accel.py``).  The stiff shipped cases converge in
++under twenty sweeps, and the run stops on the transport residual
++``||A f - b|| / ||b||`` of the distribution, evaluated without a sweep.
++``scheme.accel: cis`` restores the plain source iteration; both land on the
++same discrete fixed point.
++
++The sweep itself is unchanged and is Gauss-Seidel: within a direction each
++element reads inflow from neighbours already updated in the same pass, which
++is what makes it an exact solve for that direction.
+ 
+ ## Cases
+ 
+@@ -53,6 +70,7 @@
+ 
+     pybte/          the solver
+       driver.py     the outer iteration
++      accel.py      Krylov acceleration and the coarse-angle preconditioner
+       sweep.py      the transport sweep
+       moments.py    moments and the residual
+       basis.py      nodal DG bases
+@@ -66,6 +84,9 @@
+ 
+ ## Notes
+ 
++* `record.iterations` counts transport sweeps, whichever scheme ran.
++* `cases/kn_1e-3.yaml` duplicates `F1_1e-3` under the name the test suite
++  expects.
+ * `Temp`, `Qx`, `Qy` on the run record are element *integrals*, not averages:
+   `record.temp.sum()` is the domain integral of `T`.  Divide by
+   `mesh.tri_area` for cell averages.
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/cases/kn_1e-3.yaml solution/cases/kn_1e-3.yaml
+--- environment/cases/kn_1e-3.yaml	1970-01-01 08:00:00.000000000 +0800
++++ solution/cases/kn_1e-3.yaml	2026-09-14 03:50:43.906433810 +0800
+@@ -0,0 +1,13 @@
++# Isothermal square: T = 1 on the north wall, 0 on the other three.  Kn_R = 0.001, Kn_N = 100000.
++iteration:  {tol: 1.0e-8, tmax: 6000, true_residual: false}
++velmesh:    {npole: 10, nazim: 20}
++dg:         {deg: 2}
++flow:       {cv: 1.0, vg: 1.0, tau_r: 0.001, tau_n: 100000}
++mesh:       {file: ../meshes/A1_Nx11_Ny11.msh}
++boundaries:
++  - {name: SWall, phyid: 11, type: thermalising, temp: 0.0}
++  - {name: NWall, phyid: 12, type: thermalising, temp: 1.0}
++  - {name: EWall, phyid: 13, type: thermalising, temp: 0.0}
++  - {name: WWall, phyid: 14, type: thermalising, temp: 0.0}
++restart:    {enabled: false, path: null}
++output:     {dir: ../out/kn_1e-3, field: false, runtime_log: false, run_record: true}
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/__main__.py solution/pybte/__main__.py
+--- environment/pybte/__main__.py	2026-09-10 17:34:36.769077263 +0800
++++ solution/pybte/__main__.py	2026-09-14 04:40:28.965447085 +0800
+@@ -1,5 +1,6 @@
+ """Command-line interface.
+ 
++    python -m pybte         case.yaml                     (same as ``run``)
+     python -m pybte run     case.yaml [--tmax N] [--tol T] [--quiet]
+     python -m pybte convert control.in [-o case.yaml] [--mesh-dir DIR]
+     python -m pybte info    case.yaml
+@@ -120,6 +121,10 @@
+     i.add_argument("case")
+     i.set_defaults(fn=_cmd_info)
+ 
++    argv = list(sys.argv[1:] if argv is None else argv)
++    # ``python -m pybte case.yaml`` is ``run case.yaml``
++    if argv and argv[0] not in ("run", "convert", "info", "-h", "--help"):
++        argv.insert(0, "run")
+     args = p.parse_args(argv)
+     return args.fn(args)
+ 
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/accel.py solution/pybte/accel.py
+--- environment/pybte/accel.py	1970-01-01 08:00:00.000000000 +0800
++++ solution/pybte/accel.py	2026-09-14 04:51:13.575433262 +0800
+@@ -0,0 +1,768 @@
++"""Krylov acceleration of the source iteration with a coarse-angle synthetic
++preconditioner.
++
++The outer iteration of ``driver.py`` is a fixed-point map,
++
++    x  ->  G(x) = L x + c,        x = (T_s, qx_s, qy_s, f_wall, f_lag)
++
++where one evaluation of ``G`` is one transport sweep followed by the moment
++update.  The state ``x`` is everything the sweep reads besides the wall
++temperatures:
++
++* the three moment fields the scattering source is built from;
++* the diffuse-wall emission ``flux_wall`` of non-thermalising faces;
++* for periodic faces, the distribution on the element behind the partner
++  face, in the directions that flow in through the face.  The sweep cannot
++  order elements across a periodic pair (the dependency is cyclic) and so
++  reads the partner's ``vdf`` as it stands -- last pass, or this pass if the
++  partner was already visited.  Carrying those values in the state makes one
++  sweep a well-defined affine map whose fixed point is the exact discrete
++  solution, periodic coupling included.
++
++The map is affine because the sweep is linear in its scattering source, in
++the wall emission and in the inflow, and ``c`` is what the sweep returns
++with all of those zero.  The converged distribution is the fixed point
++``x = G(x)``, i.e. the solution of ``(I - L) x = c``.  Source iteration is
++Richardson's method on this system, and its contraction ``rho -> 1`` as the
++medium becomes optically thick or normal scattering dominates.
++
++Here the system is solved with right-preconditioned GMRES.  Each Krylov
++vector costs exactly one sweep (``L v`` is the sweep with the wall
++temperatures zeroed), and the preconditioner is a *coarse-angle synthetic*
++solve: the same nodal-DG discretisation, the same integral tensors and the
++same three boundary treatments, but with a handful of discrete directions
++instead of ``NPOLE * NAZIM``.  That small transport system -- with its
++scattering, wall-emission and periodic coupling folded in -- is assembled as
++one sparse matrix and LU-factorised once by SuperLU; applying the
++preconditioner is a sparse triangular solve.  Because the spatial
++discretisation is identical, the preconditioner captures the slowly
++converging diffusive and hydrodynamic modes exactly in space and only
++approximately in angle, which is all a Krylov method needs.
++
++Nothing here changes the discrete system whose fixed point is sought: the
++sweep kernel and the moment kernel are those of ``_kernels.py``, and the
++final state is produced by one plain sweep from the converged moments.
++"""
++from __future__ import annotations
++
++from dataclasses import dataclass, field
++
++import numpy as np
++import scipy.sparse as sp
++import scipy.sparse.linalg as spla
++
++from .constants import BC_NONTHERMALISING, BC_PERIODIC, PI
++from .moments import compute_moments
++
++__all__ = ["coarse_quadrature", "MomentOperator", "CoarseSystem",
++           "CoarsePreconditioner", "gmres"]
++
++
++# ---------------------------------------------------------------------------
++# coarse angular quadrature
++# ---------------------------------------------------------------------------
++def coarse_quadrature(n_dir: int = 6, offset: float = 0.3):
++    """``n_dir`` in-plane directions on one ring, equal weights.
++
++    The ring radius is chosen so that the zeroth, first and second angular
++    moments of the true (sphere-projected) quadrature are reproduced
++    exactly: ``sum w = 4 pi``, ``sum w c = 0``, ``sum w c c^T = (4 pi / 3) I``.
++    That fixes the diffusion coefficient of the coarse model and makes the
++    normal-scattering term conserve momentum in it, which is what the
++    preconditioner has to get right.  With five or more directions the
++    fourth moments are isotropic as well, which the hydrodynamic regime
++    needs.  ``offset`` rotates the ring away from the mesh directions so
++    that no coarse direction is tangent to a face.
++    """
++    if n_dir < 3:
++        raise ValueError("need at least three coarse directions")
++    ang = offset + 2.0 * PI * np.arange(n_dir) / n_dir
++    rad = np.sqrt(2.0 / 3.0)
++    return rad * np.cos(ang), rad * np.sin(ang), np.full(n_dir, 4.0 * PI / n_dir)
++
++
++# ---------------------------------------------------------------------------
++# element ordering for the sparse factorisation
++# ---------------------------------------------------------------------------
++def nested_dissection(centroids, adjacency, leaf: int = 8) -> np.ndarray:
++    """Geometric nested dissection of the element graph.
++
++    Recursive coordinate bisection; the separator at each level is the set
++    of elements on the lower side that touch the upper side, numbered last.
++    On these meshes the resulting natural-order LU has 10-45% less fill than
++    SuperLU's minimum-degree orderings, and the factorisation is faster in
++    proportion.  Returns ``order[p]`` = element at position ``p``.
++    """
++    order: list = []
++
++    def rec(ids):
++        if ids.size <= leaf:
++            order.extend(ids.tolist())
++            return
++        pts = centroids[ids]
++        ax = int(np.argmax(pts.max(axis=0) - pts.min(axis=0)))
++        med = np.median(pts[:, ax])
++        lower = ids[pts[:, ax] <= med]
++        upper = ids[pts[:, ax] > med]
++        if lower.size == 0 or upper.size == 0:
++            order.extend(ids.tolist())
++            return
++        up = set(upper.tolist())
++        sep = np.array([any(nb in up for nb in adjacency[i]) for i in lower])
++        rec(lower[~sep])
++        rec(upper)
++        order.extend(lower[sep].tolist())
++
++    rec(np.arange(centroids.shape[0]))
++    return np.asarray(order, dtype=np.int64)
++
++
++# ---------------------------------------------------------------------------
++# the fixed-point map as an affine operator
++# ---------------------------------------------------------------------------
++class MomentOperator:
++    """``x -> L x`` and ``c`` for the fixed-point map of the outer iteration.
++
++    ``apply_L(x)`` is the homogeneous part (wall temperatures zeroed) and
++    ``constant()`` is ``G(0)``; both cost exactly one sweep.  ``finish``
++    leaves the distribution of a converged state in ``solver.vdf``.
++    """
++
++    def __init__(self, solver, keep: int = 64):
++        self.s = solver
++        ctx = solver.ctx
++        self.nd, self.n_tris, self.ndir = solver.ndof, solver.n_tris, solver.ndir
++        self.k = self.nd * self.n_tris
++
++        bc = ctx.face_bc
++        typ = np.where(bc >= 0, ctx.bc_type[np.maximum(bc, 0)], -1)
++        self.wall_faces = np.flatnonzero(typ == BC_NONTHERMALISING)
++        self.n_wall = self.wall_faces.size * self.nd
++
++        # periodic lag: (direction, partner element) pairs the sweep reads
++        el, il, part = [], [], []
++        for i in range(self.n_tris):
++            for j in range(3):
++                f = int(ctx.tri_faces[i, j])
++                if typ[f] == BC_PERIODIC:
++                    el.append(i)
++                    il.append(j)
++                    part.append(int(ctx.periodic_tri[f]))
++        self.per_el = np.asarray(el, dtype=np.int64)
++        self.per_il = np.asarray(il, dtype=np.int64)
++        self.per_tri = np.asarray(part, dtype=np.int64)
++        if self.per_el.size:
++            speed = (ctx.cxv[:, None] * ctx.nx[self.per_el, self.per_il][None]
++                     + ctx.cyv[:, None] * ctx.ny[self.per_el, self.per_il][None])
++            # only pairs the sweep reads *before* visiting the partner are
++            # state; when the partner comes first in the sweep order the
++            # inflow is this pass's fresh value (Gauss-Seidel) and carries no
++            # lag at all
++            pos = np.empty_like(ctx.order)
++            np.put_along_axis(pos, ctx.order, np.arange(self.n_tris, dtype=pos.dtype)[None, :], axis=1)
++            stale = pos[:, self.per_tri] > pos[:, self.per_el]         # (ndir, n_pf)
++            self.lag_d, self.lag_f = np.nonzero((speed < 0.0) & stale)  # (n_lag,)
++        else:
++            self.lag_d = self.lag_f = np.zeros(0, dtype=np.int64)
++        self.lag_tri = self.per_tri[self.lag_f]
++        self.n_lag = self.lag_d.size * self.nd
++        self.n = 3 * self.k + self.n_wall + self.n_lag
++
++        self.zero_temp = np.zeros_like(ctx.bc_temp)
++        self.work = np.zeros_like(solver.vdf)
++        self.sweeps = 0
++        # the distributions behind c and each L z_j, kept so that the
++        # converged distribution can be assembled by linearity instead of
++        # by one more sweep (see ``finish``)
++        self.keep = keep
++        self.vdf_c = None
++        self.vdf_hist: list = []
++
++    # -- packing -----------------------------------------------------------
++    def unpack(self, x, vdf):
++        m = self.s.mom
++        k = self.k
++        m.ts[:] = x[:k].reshape(self.nd, self.n_tris)
++        m.qxs[:] = x[k:2 * k].reshape(self.nd, self.n_tris)
++        m.qys[:] = x[2 * k:3 * k].reshape(self.nd, self.n_tris)
++        if self.n_wall:
++            self.s.bcdata.flux_wall[self.wall_faces] = \
++                x[3 * k:3 * k + self.n_wall].reshape(-1, self.nd)
++        if self.n_lag:
++            vdf[self.lag_d, self.lag_tri, :] = \
++                x[3 * k + self.n_wall:].reshape(-1, self.nd)
++
++    def pack(self, vdf):
++        m = self.s.mom
++        parts = [m.ts.ravel(), m.qxs.ravel(), m.qys.ravel()]
++        if self.n_wall:
++            parts.append(self.s.bcdata.flux_wall[self.wall_faces].ravel())
++        if self.n_lag:
++            parts.append(vdf[self.lag_d, self.lag_tri, :].ravel())
++        return np.concatenate(parts)
++
++    def split(self, x):
++        """``(ts, qxs, qys, fw, lag)`` views of a state vector."""
++        k = self.k
++        return (x[:k].reshape(self.nd, self.n_tris),
++                x[k:2 * k].reshape(self.nd, self.n_tris),
++                x[2 * k:3 * k].reshape(self.nd, self.n_tris),
++                x[3 * k:3 * k + self.n_wall].reshape(-1, self.nd),
++                x[3 * k + self.n_wall:].reshape(-1, self.nd))
++
++    @staticmethod
++    def join(ts, qxs, qys, fw, lag):
++        return np.concatenate([ts.ravel(), qxs.ravel(), qys.ravel(),
++                               fw.ravel(), lag.ravel()])
++
++    # -- the sweep ---------------------------------------------------------
++    def _sweep(self, vdf, bc_temp):
++        self.s.ctx.sweep(self.s.mom, vdf, bc_temp=bc_temp)
++        self.sweeps += 1
++        self._moments_of(vdf)
++
++    def apply_L(self, x):
++        # sweep straight into a fresh history slot: the sweep never reads
++        # the array's prior contents except the periodic-lag entries, which
++        # ``unpack`` sets
++        if len(self.vdf_hist) < self.keep:
++            vdf = np.empty_like(self.work)
++            self.vdf_hist.append(vdf)
++        else:
++            vdf = self.work
++        self.unpack(x, vdf)
++        self._sweep(vdf, self.zero_temp)
++        return self.pack(vdf)
++
++    def constant(self, x0=None):
++        """``G(x0)`` -- the full map, wall temperatures included -- from the
++        state ``x0`` (zero by default), keeping its distribution as the
++        affine offset ``finish`` builds on.  ``G(0)`` is ``c``."""
++        self.unpack(np.zeros(self.n) if x0 is None else x0, self.work)
++        self._sweep(self.work, self.s.ctx.bc_temp)
++        self.vdf_c = self.work.copy()
++        return self.pack(self.work)
++
++    def state_of(self, vdf):
++        """The state ``(moments, wall emission, lag)`` a distribution defines."""
++        self._moments_of(vdf)
++        return self.pack(vdf)
++
++    def residual_matvec(self, v):
++        """``(I - L) v``."""
++        return v - self.apply_L(v)
++
++    def state_weights(self):
++        """Per-component weights making the Euclidean norm of a state
++        residual track the transport residual it generates.
++
++        The temperature moments enter the source with ``alpha``, the heat
++        flux with ``beta`` -- a ratio of ``3 tau_R / tau_N`` when normal
++        scattering is weak, so an unweighted norm would have GMRES chase a
++        flux mismatch that is invisible to the discrete system.  Wall
++        emission and periodic inflow enter through the face tensors with
++        the upwind speed, and are given that typical size.
++        """
++        ctx = self.s.ctx
++        alpha = ctx.cv / (4.0 * PI) * (1.0 / ctx.tau_r + 1.0 / ctx.tau_n)
++        beta = 3.0 / (4.0 * PI) / ctx.tau_n / (ctx.vg * ctx.vg)
++        mbar = float(np.mean(np.abs(ctx.mass)))
++        fbar = float(np.mean(np.abs(ctx.ttfc)))
++        w = np.empty(self.n)
++        k = self.k
++        w[:k] = alpha * mbar
++        w[k:3 * k] = beta * mbar * np.sqrt(2.0 / 3.0)
++        w[3 * k:] = 0.5 * fbar
++        return w / (alpha * mbar)
++
++    # -- the transport residual of a state, without a sweep -------------
++    def _setup_residual(self):
++        ctx = self.s.ctx
++        nx, ny = ctx.nx, ctx.ny
++        w, cx, cy = ctx.domega, ctx.cxv, ctx.cyv
++        self._massT = np.ascontiguousarray(np.transpose(ctx.mass, (2, 1, 0)))
++        self._alpha = ctx.cv / (4.0 * PI) * (1.0 / ctx.tau_r + 1.0 / ctx.tau_n)
++        self._beta = 3.0 / (4.0 * PI) / ctx.tau_n / (ctx.vg * ctx.vg)
++        # angular moments of the quadrature: sum_d w (a + b cx + c cy)^2 is
++        # a fixed quadratic form in (a, b, c)
++        self._q = np.array([w.sum(), (w * cx * cx).sum(), (w * cy * cy).sum(),
++                            (w * cx).sum(), (w * cy).sum(), (w * cx * cy).sum()])
++        # elements whose source has a direction-resolved part (walls, lag)
++        aff = []
++        if self.n_wall:
++            adj = [self.s.mesh.adjacent(int(f)) for f in self.wall_faces]
++            self._wtri = np.asarray([t for t, _ in adj])
++            wl = np.asarray([l for _, l in adj])
++            sp = cx[:, None] * nx[self._wtri, wl][None] + cy[:, None] * ny[self._wtri, wl][None]
++            self._wm_wall = 0.5 * (sp - np.abs(sp))                     # (ndir, n_w)
++            aff.append(self._wtri)
++        if self.n_lag:
++            sp = (cx[self.lag_d] * nx[self.per_el, self.per_il][self.lag_f]
++                  + cy[self.lag_d] * ny[self.per_el, self.per_il][self.lag_f])
++            self._wm_lag = 0.5 * (sp - np.abs(sp))                      # (n_lag,)
++            self._ttfc_lag = ctx.ttfc[self.per_el[self.lag_f], self.per_il[self.lag_f]]
++            self._lag_el = self.per_el[self.lag_f]
++            aff.append(self._lag_el)
++        self._aff = np.unique(np.concatenate(aff)) if aff else np.zeros(0, dtype=np.int64)
++        aff_pos = np.full(self.n_tris, -1, dtype=np.int64)
++        aff_pos[self._aff] = np.arange(self._aff.size)
++        if self.n_wall:
++            self._wpos = aff_pos[self._wtri]
++        if self.n_lag:
++            self._lpos = aff_pos[self._lag_el]
++        # the boundary data: thermalising-wall inflow, in the weighted norm
++        bw2 = 0.0
++        for il in range(3):
++            fc = ctx.tri_faces[:, il]
++            bc = ctx.face_bc[fc]
++            therm = bc >= 0
++            therm[therm] = ctx.bc_type[bc[therm]] == 1
++            if not np.any(therm):
++                continue
++            el = np.flatnonzero(therm)
++            sp = cx[:, None] * nx[el, il][None] + cy[:, None] * ny[el, il][None]
++            wm = 0.5 * (sp - np.abs(sp))                                 # (ndir, n_el)
++            tw = ctx.cv / (4.0 * PI) * ctx.bc_temp[bc[el]]              # (n_el,)
++            contrib = (wm * tw[None, :])[:, :, None] * ctx.ttfc[el, il, :, 0][None]
++            bw2 += float(np.sum(w[:, None, None] * contrib ** 2))
++        self.boundary_norm = np.sqrt(bw2)
++        self._residual_ready = True
++
++    def transport_residual(self, r):
++        """``||A f - b|| / ||b||`` of the distribution ``f = sweep(x)`` whose
++        state residual is ``r = x - G(x)``, in the solid-angle-weighted norm,
++        with ``b`` the thermalising-wall inflow alone (everything else --
++        scattering, wall emission, periodic coupling -- counted in ``A``).
++
++        ``A f`` differs from the sources the sweep was fed only through the
++        mismatch between the state and what the distribution generated, so
++        the residual is the source operator applied to ``r``; no sweep is
++        needed.  This is the strictest of the usual normalisations.
++        """
++        if not getattr(self, "_residual_ready", False):
++            self._setup_residual()
++        ctx = self.s.ctx
++        ts, qxs, qys, fw, lag = self.split(r)
++        # scattering source of the moment mismatch: a + b cx + c cy per (i, m)
++        a = np.einsum("iml,li->im", self._massT, ts) * self._alpha       # (i, m)
++        if self._beta != 0.0:
++            b = np.einsum("iml,li->im", self._massT, qxs) * self._beta
++            c = np.einsum("iml,li->im", self._massT, qys) * self._beta
++        else:
++            b = c = np.zeros_like(a)
++        q = self._q
++        per_el = (q[0] * (a * a) + q[1] * (b * b) + q[2] * (c * c)
++                  + 2.0 * (q[3] * a * b + q[4] * a * c + q[5] * b * c)).sum(axis=1)
++        num2 = float(per_el.sum())
++        if self._aff.size:
++            # elements with wall emission or periodic inflow: resolve in angle
++            k = self._aff
++            src = (a[k][None] + ctx.cxv[:, None, None] * b[k][None]
++                   + ctx.cyv[:, None, None] * c[k][None])                # (d, k, m)
++            if self.n_wall:
++                np.add.at(src, (slice(None), self._wpos), self._wm_wall[:, :, None] * fw[None])
++            if self.n_lag:
++                inflow = np.einsum("kml,kl->km", self._ttfc_lag, lag)
++                np.add.at(src, (self.lag_d, self._lpos), -self._wm_lag[:, None] * inflow)
++            num2 += float(np.einsum("d,dkm,dkm->", ctx.domega, src, src)) - float(per_el[k].sum())
++        return np.sqrt(max(num2, 0.0)) / self.boundary_norm
++
++    def _moments_of(self, vdf):
++        """Moments and wall emission of ``vdf`` into the solver's state."""
++        s = self.s
++        compute_moments(vdf, s.ctx.cxv, s.ctx.cyv, s.ctx.domega,
++                        s.integrals.int_tri, s.case.flow.cv, s.mom)
++        s.bcdata.update_wall_flux(vdf, s.ctx.cxv, s.ctx.cyv, s.ctx.domega,
++                                  s.integrals.int_tri_fc, s.mesh)
++
++    def finish(self, x, coeffs=None):
++        """Leave the converged distribution in ``solver.vdf`` with moments
++        and wall emission consistent with it.
++
++        The sweep is affine, so the distribution belonging to
++        ``x = x0 + sum_j coeffs[j] z_j`` is ``vdf_c + sum_j coeffs[j] vdf_j``
++        with ``vdf_c`` the distribution ``constant(x0)`` produced and
++        ``vdf_j`` the one of the ``j``-th ``apply_L``.  When those are all
++        on hand this costs an axpy per Krylov vector instead of a sweep;
++        otherwise one plain sweep from ``x`` is performed.
++        """
++        vdf = self.s.vdf
++        if (coeffs is not None and self.vdf_c is not None
++                and len(self.vdf_hist) >= len(coeffs)):
++            vdf[:] = self.vdf_c
++            for cj, vj in zip(coeffs, self.vdf_hist):
++                vdf += cj * vj
++            self._moments_of(vdf)
++        else:
++            self.unpack(x, vdf)
++            self._sweep(vdf, self.s.ctx.bc_temp)
++        self.vdf_hist.clear()
++        self.vdf_c = None
++
++
++# ---------------------------------------------------------------------------
++# the coarse coupled system
++# ---------------------------------------------------------------------------
++@dataclass
++class CoarseSystem:
++    """``K g = s`` for the coarse-angle transport problem, with the scattering
++    source, the diffuse-wall emission and the periodic coupling folded into
++    ``K``.  Unknowns are ordered ``(element, direction, dof)``, element-major,
++    so the dense in-element scattering block is contiguous.
++    """
++    cx: np.ndarray
++    cy: np.ndarray
++    w: np.ndarray
++    lu: spla.SuperLU
++    nnz: int
++    nd: int
++    n_tris: int
++    alpha: float
++    beta: float
++    cv: float
++    massT: np.ndarray                   # (i, m, l) = mass[l, m, i]
++    wminus: np.ndarray                  # (n_c, n_tris, 3)  0.5 * (s - |s|)
++    # diffusely reflecting walls
++    wall_tri: np.ndarray                # (n_w,) element behind each wall face
++    wall_lfc: np.ndarray                # (n_w,) its local edge
++    wall_emit: np.ndarray               # (n_w, n_c) weight of g[d, tri] in flux_wall
++    wall_fcm: np.ndarray                # (n_w, m, l)
++    # periodic lag (see MomentOperator)
++    per_el: np.ndarray                  # (n_pf,) element owning each periodic face
++    per_il: np.ndarray                  # (n_pf,)
++    per_tri: np.ndarray                 # (n_pf,) partner element
++    lag_d: np.ndarray                   # (n_lag,) fine direction of each lag entry
++    lag_f: np.ndarray                   # (n_lag,) periodic face of each lag entry
++    half_inv: np.ndarray                # (n_pf, 3, 3) half-range P1 fit per face
++    fcx: np.ndarray
++    fcy: np.ndarray
++    fw: np.ndarray
++    perm: np.ndarray                    # (n_tris,) element at each position
++    pos: np.ndarray                     # (n_tris,) position of each element
++    K: sp.csc_matrix | None = field(default=None, repr=False)
++
++    @classmethod
++    def build(cls, ctx, op: MomentOperator, cx, cy, w, keep_matrix=False,
++              ordering="nd", diag_pivot_thresh=0.1, dtype=np.float64):
++        cx = np.asarray(cx, dtype=float)
++        cy = np.asarray(cy, dtype=float)
++        w = np.asarray(w, dtype=float)
++        n_c = cx.size
++        nd, n_tris = op.nd, op.n_tris
++        cv, vg = ctx.cv, ctx.vg
++        tau_r, tau_n, tau_c = ctx.tau_r, ctx.tau_n, ctx.tau_c
++
++        mass = np.ascontiguousarray(np.transpose(ctx.mass, (2, 0, 1)))   # (i, m, l)
++        massT = np.ascontiguousarray(np.transpose(ctx.mass, (2, 1, 0)))  # (i, m, l) = mass[l, m, i]
++        gx, gy, fcm, ttfc = ctx.gx, ctx.gy, ctx.fcm, ctx.ttfc
++        nx, ny = ctx.nx, ctx.ny
++
++        # speed through each local edge, per coarse direction
++        s = cx[:, None, None] * nx[None] + cy[:, None, None] * ny[None]    # (c, i, il)
++        wplus = 0.5 * (s + np.abs(s))
++        wminus = 0.5 * (s - np.abs(s))
++
++        # element numbering for the factorisation
++        if ordering == "nd":
++            mesh = op.s.mesh
++            cent = mesh.nodes[mesh.tri_nodes].mean(axis=1)
++            adjacency = [[int(t) for t in mesh.tri_neighbour[i] if t >= 0]
++                         for i in range(n_tris)]
++            for e, t in zip(op.per_el, op.per_tri):
++                adjacency[int(e)].append(int(t))
++            perm = nested_dissection(cent, adjacency)
++            permc_spec = "NATURAL"
++        else:
++            perm = np.arange(n_tris)
++            permc_spec = "MMD_AT_PLUS_A"
++        pos = np.empty(n_tris, dtype=np.int64)
++        pos[perm] = np.arange(n_tris)
++
++        def idx(d, i):
++            return (pos[np.asarray(i)] * n_c + d) * nd
++
++        rows, cols, vals = [], [], []
++        m_ = np.arange(nd)
++
++        def add_block(r0, c0, blk):
++            """``blk[..., m, l]`` at row bases ``r0`` / column bases ``c0``."""
++            rows.append(np.broadcast_to(np.asarray(r0)[..., None, None]
++                                        + m_[None, :, None], blk.shape).ravel())
++            cols.append(np.broadcast_to(np.asarray(c0)[..., None, None]
++                                        + m_[None, None, :], blk.shape).ravel())
++            vals.append(np.ascontiguousarray(blk).ravel())
++
++        d_all = np.arange(n_c)
++        i_all = np.arange(n_tris)
++
++        # -- transport: the element operator A_SOL(d, i) -------------------
++        a = ((1.0 / tau_c) * mass[None]
++             - cx[:, None, None, None] * gx[None]
++             - cy[:, None, None, None] * gy[None]
++             + np.einsum("dik,iklm->dilm", wplus, fcm))               # (c, i, m, l)
++        base = idx(d_all[:, None], i_all[None, :])
++        add_block(base, base, a)
++
++        # -- transport: upwind inflow from the neighbour or periodic partner --
++        for il in range(3):
++            fc = ctx.tri_faces[:, il]
++            bc = ctx.face_bc[fc]
++            interior = bc < 0
++            periodic = np.zeros(n_tris, dtype=bool)
++            periodic[~interior] = ctx.bc_type[bc[~interior]] == BC_PERIODIC
++            iext = np.where(interior, ctx.neighbour[:, il], ctx.periodic_tri[fc])
++            sel = np.flatnonzero(interior | periodic)
++            for d in range(n_c):
++                act = sel[wminus[d, sel, il] < 0.0]
++                if act.size:
++                    blk = wminus[d, act, il][:, None, None] * ttfc[act, il]
++                    add_block(idx(d, act), idx(d, iext[act]), blk)
++
++        # -- scattering: dense within each element --------------------------
++        alpha = cv / (4.0 * PI) * (1.0 / tau_r + 1.0 / tau_n)
++        beta = 3.0 / (4.0 * PI) / tau_n / (vg * vg)
++        cdd = w[None, :] * (alpha / cv + beta * (cx[:, None] * cx[None, :]
++                                                  + cy[:, None] * cy[None, :]))
++        for d in range(n_c):
++            for dp in range(n_c):
++                add_block(idx(d, i_all), idx(dp, i_all), -cdd[d, dp] * massT)
++
++        # -- diffuse walls: the emission is linear in g ----------------------
++        wall_tri = np.zeros(0, dtype=np.int64)
++        wall_lfc = np.zeros(0, dtype=np.int64)
++        wall_emit = np.zeros((0, n_c))
++        wall_fcm = np.zeros((0, nd, nd))
++        if op.wall_faces.size:
++            mesh = op.s.mesh
++            adj = [mesh.adjacent(int(f)) for f in op.wall_faces]
++            wall_tri = np.asarray([t for t, _ in adj], dtype=np.int64)
++            wall_lfc = np.asarray([l for _, l in adj], dtype=np.int64)
++            # u = c . n_in; u < 0 hits the wall, u >= 0 is emitted into
++            u = -(cx[None, :] * nx[wall_tri, wall_lfc][:, None]
++                  + cy[None, :] * ny[wall_tri, wall_lfc][:, None])     # (n_w, c)
++            out = u < 0.0
++            ss2 = -np.sum(np.where(~out, u * w[None, :], 0.0), axis=1)
++            wall_emit = np.where(out, u * w[None, :], 0.0) * (-1.0 / ss2)[:, None]
++            wall_fcm = fcm[wall_tri, wall_lfc]
++            wm_wall = wminus[:, wall_tri, wall_lfc]                    # (c, n_w)
++            for d in range(n_c):
++                for dp in range(n_c):
++                    k = np.flatnonzero((wm_wall[d] < 0.0) & out[:, dp])
++                    if k.size:
++                        # src[d, t, m] += wm * flux_wall[f, m]  ->  LHS: -=
++                        coef = -(wm_wall[d, k] * wall_emit[k, dp])
++                        add_block(idx(d, wall_tri[k]), idx(dp, wall_tri[k]),
++                                  coef[:, None, None] * wall_fcm[k])
++
++        # -- periodic lag: half-range P1 fit of the fine inflow ---------------
++        n_pf = op.per_el.size
++        half_inv = np.zeros((n_pf, 3, 3))
++        if n_pf:
++            fnx = nx[op.per_el, op.per_il]
++            fny = ny[op.per_el, op.per_il]
++            # moments of a + b.c over the inflow hemisphere, discrete
++            speed = (ctx.cxv[:, None] * fnx[None] + ctx.cyv[:, None] * fny[None])
++            wi = np.where(speed < 0.0, ctx.domega[:, None], 0.0)      # (ndir, n_pf)
++            H = np.empty((n_pf, 3, 3))
++            H[:, 0, 0] = wi.sum(axis=0)
++            H[:, 0, 1] = H[:, 1, 0] = (wi * ctx.cxv[:, None]).sum(axis=0)
++            H[:, 0, 2] = H[:, 2, 0] = (wi * ctx.cyv[:, None]).sum(axis=0)
++            H[:, 1, 1] = (wi * ctx.cxv[:, None] ** 2).sum(axis=0)
++            H[:, 2, 2] = (wi * ctx.cyv[:, None] ** 2).sum(axis=0)
++            H[:, 1, 2] = H[:, 2, 1] = (wi * ctx.cxv[:, None] * ctx.cyv[:, None]).sum(axis=0)
++            half_inv = np.linalg.inv(H)
++
++        n = n_c * n_tris * nd
++        K = sp.csc_matrix((np.concatenate(vals),
++                           (np.concatenate(rows), np.concatenate(cols))),
++                          shape=(n, n))
++        K.sum_duplicates()
++        # Threshold pivoting: full partial pivoting wrecks the fill-reducing
++        # ordering on the optically thin systems (10x the factorisation
++        # cost); the matrix is far from needing it.
++        lu = spla.splu(K.astype(dtype, copy=False), permc_spec=permc_spec,
++                       diag_pivot_thresh=diag_pivot_thresh)
++        return cls(cx=cx, cy=cy, w=w, lu=lu, nnz=K.nnz, nd=nd, n_tris=n_tris,
++                   alpha=alpha, beta=beta, cv=cv, massT=massT, wminus=wminus,
++                   wall_tri=wall_tri, wall_lfc=wall_lfc, wall_emit=wall_emit,
++                   wall_fcm=wall_fcm,
++                   per_el=op.per_el, per_il=op.per_il, per_tri=op.per_tri,
++                   lag_d=op.lag_d, lag_f=op.lag_f, half_inv=half_inv,
++                   fcx=ctx.cxv, fcy=ctx.cyv, fw=ctx.domega,
++                   perm=perm, pos=pos,
++                   K=K if keep_matrix else None)
++
++    @property
++    def n(self) -> int:
++        return self.cx.size * self.n_tris * self.nd
++
++    # -- state -> coarse source ---------------------------------------------
++    def source(self, ts, qxs, qys, fw, lag, ttfc):
++        """The coarse transport source for a state ``(ts, qxs, qys, fw, lag)``.
++
++        The fine-direction periodic lag is projected onto the coarse inflow
++        directions through its half-range P1 fit, which is exact when the
++        inflow is linear in angle -- the diffusive and hydrodynamic case.
++        """
++        n_c = self.cx.size
++        massT = self.massT
++        src = np.empty((n_c, self.n_tris, self.nd))
++        src[:] = np.einsum("iml,li->im", massT, self.alpha * ts)[None]
++        if self.beta != 0.0:
++            src += self.beta * (self.cx[:, None, None]
++                                * np.einsum("iml,li->im", massT, qxs)[None]
++                                + self.cy[:, None, None]
++                                * np.einsum("iml,li->im", massT, qys)[None])
++        if self.wall_tri.size:
++            wm = self.wminus[:, self.wall_tri, self.wall_lfc]           # (c, n_w)
++            np.add.at(src, (slice(None), self.wall_tri), wm[:, :, None] * fw[None])
++        if self.per_el.size:
++            n_pf = self.per_el.size
++            mom = np.zeros((n_pf, 3, self.nd))
++            wd = self.fw[self.lag_d]
++            np.add.at(mom[:, 0], self.lag_f, wd[:, None] * lag)
++            np.add.at(mom[:, 1], self.lag_f, (wd * self.fcx[self.lag_d])[:, None] * lag)
++            np.add.at(mom[:, 2], self.lag_f, (wd * self.fcy[self.lag_d])[:, None] * lag)
++            ab = np.einsum("fij,fjl->fil", self.half_inv, mom)          # (n_pf, 3, l)
++            proj = (ab[None, :, 0] + self.cx[:, None, None] * ab[None, :, 1]
++                    + self.cy[:, None, None] * ab[None, :, 2])           # (c, n_pf, l)
++            wm = self.wminus[:, self.per_el, self.per_il]                # (c, n_pf)
++            inflow = np.einsum("fml,cfl->cfm", ttfc[self.per_el, self.per_il], proj)
++            np.add.at(src, (slice(None), self.per_el), -wm[:, :, None] * inflow)
++        return np.ascontiguousarray(np.transpose(src, (1, 0, 2))[self.perm]).ravel()
++
++    # -- coarse distribution -> state ----------------------------------------
++    def moments(self, g):
++        """``(ts, qxs, qys, fw, lag)`` of the coarse distribution ``g``; the
++        fine-direction lag is the P1 reconstruction from the coarse moments
++        on the partner element."""
++        n_c = self.cx.size
++        g = g.reshape(self.n_tris, n_c, self.nd)[self.pos]              # (i, d, l)
++        ts = np.einsum("d,idl->li", self.w, g) / self.cv
++        qxs = np.einsum("d,idl->li", self.w * self.cx, g)
++        qys = np.einsum("d,idl->li", self.w * self.cy, g)
++        if self.wall_tri.size:
++            fw = np.einsum("kd,kml,kdl->km", self.wall_emit, self.wall_fcm,
++                           g[self.wall_tri])
++        else:
++            fw = np.zeros((0, self.nd))
++        if self.lag_d.size:
++            t = self.per_tri[self.lag_f]
++            lag = ((self.cv / (4.0 * PI)) * ts[:, t].T
++                   + (3.0 / (4.0 * PI)) * (self.fcx[self.lag_d][:, None] * qxs[:, t].T
++                                           + self.fcy[self.lag_d][:, None] * qys[:, t].T))
++        else:
++            lag = np.zeros((0, self.nd))
++        return ts, qxs, qys, fw, lag
++
++
++class CoarsePreconditioner:
++    """``r -> (I - L_c)^{-1} r`` through the coarse coupled system.
++
++    With ``g`` the coarse distribution driven by the residual,
++    ``K g = M r``, the error estimate is ``e = P g + r``.
++    """
++
++    def __init__(self, op: MomentOperator, coarse: CoarseSystem):
++        self.op = op
++        self.cs = coarse
++        self.ttfc = op.s.ctx.ttfc
++        self.solves = 0
++
++    def __call__(self, r):
++        ts, qxs, qys, fw, lag = self.op.split(r)
++        src = self.cs.source(ts, qxs, qys, fw, lag, self.ttfc)
++        g = self.cs.lu.solve(src.astype(self.cs.lu.L.dtype, copy=False))
++        self.solves += 1
++        ets, eqxs, eqys, efw, elag = self.cs.moments(g)
++        return self.op.join(ets + ts, eqxs + qxs, eqys + qys, efw + fw, elag + lag)
++
++
++# ---------------------------------------------------------------------------
++# GMRES
++# ---------------------------------------------------------------------------
++def gmres(matvec, b, precond=None, tol=1e-8, maxit=300, callback=None,
++          relative_to="solution", measure=None, measure_window=100.0):
++    """Flexible GMRES (right preconditioning, modified Gram-Schmidt, no
++    restart) for ``A x = b`` from ``x = 0``.
++
++    The preconditioned directions ``z_j = M^{-1} v_j`` are kept, so the
++    iterate is ``x_k = Z_k y_k``; that makes the preconditioner free to be
++    inexact (a single-precision factorisation, say) and gives ``||x_k||`` at
++    every step for the stopping test.  Returns ``(x, history, y)`` with
++    ``history[j]`` the residual norm after ``j + 1`` matvecs, relative to
++    ``||x_j||`` (``relative_to="solution"``) or to ``||b||``; ``y`` are the
++    coefficients of ``x`` in the ``z_j`` basis.
++
++    ``measure(rvec, xnorm)``, if given, replaces that cheap estimate by a
++    measure of the actual residual vector (recovered from the Arnoldi
++    relation, no matvec) once the estimate is within ``measure_window`` of
++    ``tol``; ``history`` then holds whichever was used.
++
++    For the fixed-point system ``(I - L) x = c`` the residual is
++    ``G(x) - x``, the mismatch between the moments the sweep was fed and the
++    ones it produced.  Relative to ``||x||`` that is, up to the source
++    weighting, the transport residual ``||A f - b(f)|| / ||b(f)||`` of the
++    distribution the converged state generates -- the quantity a verifier
++    checks -- whereas relative to ``||c||`` it is inflated by ``||x|| / ||c||``,
++    which is large when the medium is thick and the first sweep from zero
++    moments captures only the boundary layer.
++    """
++    n = b.size
++    bnorm = float(np.linalg.norm(b))
++    if bnorm == 0.0:
++        return np.zeros(n), [0.0], np.zeros(0)
++
++    V = np.empty((maxit + 1, n))
++    Z = np.empty((maxit, n))
++    H = np.zeros((maxit + 1, maxit))
++    Hbar = np.zeros((maxit + 1, maxit))      # before the Givens rotations
++    g = np.zeros(maxit + 1)
++    cs = np.zeros(maxit)
++    sn = np.zeros(maxit)
++    V[0] = b / bnorm
++    g[0] = bnorm
++    hist = []
++    k = 0
++    y = np.zeros(0)
++    for j in range(maxit):
++        Z[j] = precond(V[j]) if precond is not None else V[j]
++        wv = matvec(Z[j])
++        for i in range(j + 1):
++            H[i, j] = V[i] @ wv
++            wv -= H[i, j] * V[i]
++        hnew = float(np.linalg.norm(wv))
++        H[j + 1, j] = hnew
++        Hbar[:j + 2, j] = H[:j + 2, j]
++        if hnew > 0.0:
++            V[j + 1] = wv / hnew
++        for i in range(j):
++            t = cs[i] * H[i, j] + sn[i] * H[i + 1, j]
++            H[i + 1, j] = -sn[i] * H[i, j] + cs[i] * H[i + 1, j]
++            H[i, j] = t
++        rr = float(np.hypot(H[j, j], hnew))
++        cs[j] = H[j, j] / rr
++        sn[j] = hnew / rr
++        H[j, j] = rr
++        H[j + 1, j] = 0.0
++        g[j + 1] = -sn[j] * g[j]
++        g[j] = cs[j] * g[j]
++        k = j + 1
++        rnorm = abs(g[k])
++        y = np.linalg.solve(H[:k, :k], g[:k])
++        if relative_to == "solution":
++            xnorm = float(np.linalg.norm(Z[:k].T @ y))
++            res = rnorm / xnorm if xnorm > 0.0 else rnorm / bnorm
++        else:
++            xnorm = float("nan")
++            res = rnorm / bnorm
++        if measure is not None and res < measure_window * tol:
++            e = -(Hbar[:k + 1, :k] @ y)
++            e[0] += bnorm
++            res = measure(V[:k + 1].T @ e, xnorm)
++        hist.append(res)
++        if callback is not None:
++            callback(k, res)
++        if res < tol or hnew == 0.0:
++            break
++    return Z[:k].T @ y, hist, y
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/bc.py solution/pybte/bc.py
+--- environment/pybte/bc.py	2026-09-10 17:34:36.769312024 +0800
++++ solution/pybte/bc.py	2026-09-14 03:59:09.015891220 +0800
+@@ -43,18 +43,24 @@
+     flux_wall: np.ndarray      # (n_faces, ndof_tri) diffuse wall emission
+     has_nonthermalising: bool
+     has_periodic: bool
++    _wall_args: tuple | None = None
+ 
+     def update_wall_flux(self, vdf, cxv, cyv, domega, int_tri_fc, mesh) -> None:
+         """Refresh the adiabatic-wall emission from the current VDF."""
+         if not self.has_nonthermalising:
+             return
+-        wall_flux_kernel(vdf, cxv, cyv, domega,
+-                         np.ascontiguousarray(int_tri_fc),
+-                         np.ascontiguousarray(mesh.tri_normal[:, :, 0]),
+-                         np.ascontiguousarray(mesh.tri_normal[:, :, 1]),
+-                         mesh.face_bc.astype(np.int32),
+-                         mesh.face_tri.astype(np.int32),
+-                         mesh.face_lfc.astype(np.int32),
++        args = self._wall_args
++        if args is None or args[0] is not int_tri_fc:
++            # contiguous int32 copies of the mesh tables, made once
++            args = (int_tri_fc,
++                    np.ascontiguousarray(int_tri_fc),
++                    np.ascontiguousarray(mesh.tri_normal[:, :, 0]),
++                    np.ascontiguousarray(mesh.tri_normal[:, :, 1]),
++                    mesh.face_bc.astype(np.int32),
++                    mesh.face_tri.astype(np.int32),
++                    mesh.face_lfc.astype(np.int32))
++            self._wall_args = args
++        wall_flux_kernel(vdf, cxv, cyv, domega, *args[1:],
+                          self.bc_type, self.flux_wall)
+ 
+ 
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/config.py solution/pybte/config.py
+--- environment/pybte/config.py	2026-09-10 17:34:36.773249997 +0800
++++ solution/pybte/config.py	2026-09-14 04:47:52.398030150 +0800
+@@ -5,8 +5,10 @@
+ 
+ * ``restart``              -- explicit, off by default
+ * ``iteration.true_residual`` -- report a true transport residual too
+-* ``scheme.defect_*``      -- experimental fixed-point repair, off by
+-                              default; see docs/DEFECT_CORRECTION.md
++* ``scheme.accel``         -- the outer solver: ``krylov`` (GMRES with the
++                              coarse-angle synthetic preconditioner, the
++                              default) or ``cis`` (plain source iteration);
++                              same fixed point either way
+ * ``performance``          -- storage/kernel choices, no physics
+ """
+ from __future__ import annotations
+@@ -52,11 +54,32 @@
+ class Scheme:
+     #: 'raise' or 'break' when a direction's sweep graph has a cycle
+     on_cycle: str = "raise"
++    #: outer solver: 'krylov' -- GMRES on the moment fixed point with the
++    #: coarse-angle synthetic preconditioner (``pybte.accel``); 'cis' -- the
++    #: Fortran's plain source iteration.  Both converge to the same discrete
++    #: fixed point; only the path there differs.
++    accel: str = "krylov"
++    #: directions in the coarse-angle preconditioner; 0 picks 4, or 6 when
++    #: normal scattering dominates (``tau_n < tau_r``)
++    coarse_dirs: int = 0
++    #: factorise the coarse system in single precision (it is only a
++    #: preconditioner; flexible GMRES keeps the iterate in double)
++    coarse_single: bool = True
++    #: Krylov stopping tolerance on the transport residual; 0 = default
++    krylov_tol: float = 0.0
++    #: Krylov subspace cap (one sweep per vector)
++    krylov_maxit: int = 300
+ 
+     def __post_init__(self):
+-
+         if self.on_cycle not in ("raise", "break"):
+             raise ValueError("scheme.on_cycle must be 'raise' or 'break'")
++        self.accel = str(self.accel).lower()
++        if self.accel not in ("krylov", "cis"):
++            raise ValueError("scheme.accel must be 'krylov' or 'cis'")
++        self.coarse_dirs = int(self.coarse_dirs)
++        self.coarse_single = bool(self.coarse_single)
++        self.krylov_tol = float(self.krylov_tol)
++        self.krylov_maxit = int(self.krylov_maxit)
+ 
+ 
+ @dataclass
+@@ -284,7 +307,9 @@
+         import yaml
+ 
+         path = Path(path)
+-        data = yaml.safe_load(path.read_text()) or {}
++        # the C loader parses these files ~10x faster than the pure-Python one
++        loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
++        data = yaml.load(path.read_text(), Loader=loader) or {}
+         return cls.from_dict(data, basedir=str(path.parent))
+ 
+     def to_yaml(self, path) -> None:
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/driver.py solution/pybte/driver.py
+--- environment/pybte/driver.py	2026-09-10 17:34:36.770501806 +0800
++++ solution/pybte/driver.py	2026-09-14 04:51:13.575532390 +0800
+@@ -10,8 +10,11 @@
+         EXIT when RESIDUAL < TOL or STEP >= TMAX
+     END DO
+ 
+-Nothing about that structure changes in the port.  What is added around it:
+-an explicit restart contract, an optional true residual, and a
++That loop is kept as :meth:`Solver.run_cis`.  The default,
++:meth:`Solver.run_krylov`, treats one pass of it as the affine map it is and
++solves for its fixed point with preconditioned GMRES (see
++:mod:`pybte.accel`); the sweep, the moments and the fixed point are the same.
++Around both: an explicit restart contract, an optional true residual, and a
+ :class:`~pybte.io_output.RunRecord` complete enough that a verifier never has
+ to parse stdout.
+ """
+@@ -153,6 +156,91 @@
+ 
+     # -- the outer loop -----------------------------------------------------
+     def run(self, callback=None, progress_every: int = 0) -> RunRecord:
++        """Solve to the discrete fixed point.
++
++        ``scheme.accel = 'krylov'`` (the default) runs preconditioned GMRES
++        on the moment fixed-point equation, see :mod:`pybte.accel`;
++        ``'cis'`` runs the Fortran's source iteration.  Either way
++        ``record.iterations`` counts transport sweeps.
++        """
++        accel = self.case.scheme.accel
++        if accel == "krylov" and int(self.order.cycles_broken.sum()) == 0:
++            return self.run_krylov(callback=callback, progress_every=progress_every)
++        return self.run_cis(callback=callback, progress_every=progress_every)
++
++    def run_krylov(self, callback=None, progress_every: int = 0) -> RunRecord:
++        """GMRES on ``(I - L) x = c`` with the coarse-angle synthetic
++        preconditioner; one sweep per Krylov vector, plus one to evaluate
++        ``c`` and one plain sweep from the converged state."""
++        from .accel import (CoarsePreconditioner, CoarseSystem, MomentOperator,
++                            coarse_quadrature, gmres)
++
++        c = self.case
++        t0 = time.perf_counter()
++        op = MomentOperator(self)
++        n_c = c.scheme.coarse_dirs
++        if n_c <= 0:
++            # the hydrodynamic regime needs isotropic fourth moments
++            n_c = 6 if c.flow.tau_n < c.flow.tau_r else 4
++        cx, cy, w = coarse_quadrature(n_c)
++        coarse = CoarseSystem.build(self.ctx, op, cx, cy, w,
++                                    dtype=np.float32 if c.scheme.coarse_single else np.float64)
++        precond = CoarsePreconditioner(op, coarse)
++        t_pre = time.perf_counter() - t0
++
++        # on the transport residual ||A f - b|| / ||b|| of the distribution
++        # the state generates, with b the wall inflow alone -- the strictest
++        # normalisation a verifier is likely to use; see accel.gmres
++        tol = c.scheme.krylov_tol if c.scheme.krylov_tol > 0.0 else 3.0e-9
++        # one sweep evaluates c, one per Krylov vector; the converged
++        # distribution is then assembled by linearity from the sweeps kept
++        # (no further sweep), or by one more sweep if the run outgrew the
++        # history budget
++        keep = 64
++        budget = c.iteration.tmax - 1 if c.iteration.tmax - 1 <= keep else c.iteration.tmax - 2
++        maxit = max(1, min(c.scheme.krylov_maxit, budget))
++        op.keep = keep
++        # initial guess: the restart distribution's state, else zero; the
++        # sweep that evaluates G(x0) doubles as the affine offset
++        x0 = op.state_of(self.vdf) if self.restart_info["enabled"] else np.zeros(op.n)
++        rhs = op.constant(x0) - x0
++
++        def cb(k, res):
++            if progress_every and k % progress_every == 0:
++                print(f"  krylov {k:5d}  residual {res:.6e}", flush=True)
++            if callback is not None:
++                callback(k, res, self)
++
++        # left-scale the system by the state weights so that GMRES
++        # minimises a norm that tracks the transport residual
++        wgt = op.state_weights()
++        inv = 1.0 / wgt
++        x, hist, y = gmres(lambda v: wgt * op.residual_matvec(v), wgt * rhs,
++                           precond=lambda v: precond(inv * v), tol=tol,
++                           maxit=maxit, callback=cb,
++                           measure=lambda rvec, xnorm: op.transport_residual(inv * rvec))
++        op.finish(x0 + x, y)
++        self.t_old[:] = self.mom.temp
++        converged = bool(hist[-1] < tol)
++        if self.ctx.mode == "onthefly":
++            self.factorisation_count += op.sweeps * self.ndir * self.n_tris
++        wall = time.perf_counter() - t0
++
++        true_res = None
++        if c.iteration.true_residual:
++            true_res = [self.ctx.true_residual(self.mom, self.vdf)]
++        rec = self._record(op.sweeps, converged, hist, [self.mom.mass], true_res,
++                           wall, scheme="GMRES+CASA",
++                           extra={"coarse_dirs": int(n_c),
++                                  "coarse_nnz": int(coarse.nnz),
++                                  "coarse_unknowns": int(coarse.n),
++                                  "krylov_tol": float(tol),
++                                  "krylov_iterations": int(len(hist)),
++                                  "preconditioner_seconds": float(t_pre),
++                                  "state_size": int(op.n)})
++        return rec
++
++    def run_cis(self, callback=None, progress_every: int = 0) -> RunRecord:
+         """Source iteration: ``Calculate_Residual_T < tol``, as the Fortran."""
+         c = self.case
+         tol, tmax = c.iteration.tol, c.iteration.tmax
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/integration.py solution/pybte/integration.py
+--- environment/pybte/integration.py	2026-09-05 12:17:48.504734452 +0800
++++ solution/pybte/integration.py	2026-09-14 03:39:46.215021339 +0800
+@@ -19,6 +19,7 @@
+ """
+ from __future__ import annotations
+ 
++import math
+ from dataclasses import dataclass
+ 
+ import numpy as np
+@@ -75,11 +76,12 @@
+ #: during setup only.  Turn it off for very large meshes.
+ EXACT_POW = True
+ 
++#: elementwise libm ``pow`` -- ``math.pow`` vectorised without changing a bit
++_libm_pow = np.frompyfunc(math.pow, 2, 1)
++
+ 
+ def _powf(x, e):
+     """``x ** float(e)`` with the Fortran's libm semantics."""
+-    import math
+-
+     if not EXACT_POW:
+         return np.power(x, float(e))
+     x = np.asarray(x, dtype=float)
+@@ -87,10 +89,7 @@
+         return np.ones_like(x)
+     if e == 1:
+         return x.copy()
+-    flat = x.ravel()
+-    out = np.fromiter((math.pow(v, float(e)) for v in flat),
+-                      dtype=np.float64, count=flat.size)
+-    return out.reshape(x.shape)
++    return _libm_pow(x, float(e)).astype(np.float64)
+ 
+ 
+ def _eval_mono(nodfun, mono, xi, eta):
+@@ -339,56 +338,67 @@
+         int_tri_fc_fc[:, :, :, j2] = np.transpose(acc, (1, 2, 0))
+ 
+     # -- INT_NODFUNC_TRI_TRI_FC --------------------------------------------
++    # Vectorised over all (element, local edge) pairs.  The per-pair
++    # arithmetic is the same sequence of elementwise operations as the
++    # Fortran's loop, so the tensor is bit-identical to a pair-by-pair
++    # evaluation; only the Python overhead of 3 * N_TRIS iterations is gone.
+     bc_codes = np.asarray(bc_codes) if bc_codes is not None else np.zeros(0, dtype=int)
+     bc_xoff = np.asarray(bc_xoff) if bc_xoff is not None else np.zeros(0)
+     bc_yoff = np.asarray(bc_yoff) if bc_yoff is not None else np.zeros(0)
+ 
+-    int_tri_tri_fc = np.zeros((n_tris, 3, ndof_tri, ndof_tri))
+-    for i in range(n_tris):
+-        for j2 in range(3):
+-            fcid = int(mesh.tri_faces[i, j2])
+-            bc = int(mesh.face_bc[fcid])
+-            ln = float(mesh.face_len[fcid])
+-            fx1 = nodes[mesh.face_nodes[fcid, 0], 0]
+-            fy1 = nodes[mesh.face_nodes[fcid, 0], 1]
+-            fx2 = nodes[mesh.face_nodes[fcid, 1], 0]
+-            fy2 = nodes[mesh.face_nodes[fcid, 1], 1]
+-            absc, weig = face_rule(np.array([ln]))
+-            absc = absc[0]
+-            weig = weig[0]
+-            xp = (fx2 - fx1) / ln * absc + fx1
+-            yp = (fy2 - fy1) / ln * absc + fy1
+-
+-            xs = nodes[mesh.tri_nodes[i], 0]
+-            ys = nodes[mesh.tri_nodes[i], 1]
+-            (bA, cA, dA), (fE, gE, hE) = _affine_to_reference(xs, ys)
+-            pm = _eval_mono(C, mono, bA * xp + cA * yp + dA, fE * xp + gE * yp + hE)
+-
+-            periodic = bc >= 0 and bc_codes.size and bc_codes[bc] == BC_PERIODIC
+-            if bc < 0 or periodic:
+-                if bc < 0:
+-                    t1, t2 = mesh.face_tri[fcid]
+-                    other = t2 if t1 == i else t1
+-                    ox = oy = 0.0
+-                else:
+-                    pair = int(mesh.face_pair[fcid])
+-                    bc_p = int(mesh.face_bc[pair])
+-                    other, _ = mesh.adjacent(pair)
+-                    ox, oy = float(bc_xoff[bc_p]), float(bc_yoff[bc_p])
+-                xo = nodes[mesh.tri_nodes[other], 0] + ox
+-                yo = nodes[mesh.tri_nodes[other], 1] + oy
+-                (bA2, cA2, dA2), (fE2, gE2, hE2) = _affine_to_reference(xo, yo)
+-                pl = _eval_mono(C, mono, bA2 * xp + cA2 * yp + dA2,
+-                                fE2 * xp + gE2 * yp + hE2)
+-                acc = np.zeros((ndof_tri, ndof_tri))
+-                for q in range(np_fc):
+-                    acc += (pm[q][:, None] * pl[q][None, :]) * weig[q]
+-                int_tri_tri_fc[i, j2] = acc
+-            else:
+-                acc = np.zeros(ndof_tri)
+-                for q in range(np_fc):
+-                    acc += pm[q] * weig[q]
+-                int_tri_tri_fc[i, j2] = acc[:, None]
++    fcid = mesh.tri_faces                                    # (n_tris, 3)
++    fbc = mesh.face_bc[fcid]
++    ln = mesh.face_len[fcid]
++    absc, weig = face_rule(ln.ravel())                      # (3 n_tris, np_fc)
++    absc = absc.reshape(n_tris, 3, np_fc)
++    weig = weig.reshape(n_tris, 3, np_fc)
++    fx1 = nodes[mesh.face_nodes[fcid, 0], 0][..., None]
++    fy1 = nodes[mesh.face_nodes[fcid, 0], 1][..., None]
++    fx2 = nodes[mesh.face_nodes[fcid, 1], 0][..., None]
++    fy2 = nodes[mesh.face_nodes[fcid, 1], 1][..., None]
++    lnc = ln[..., None]
++    xp = (fx2 - fx1) / lnc * absc + fx1                     # (n_tris, 3, np_fc)
++    yp = (fy2 - fy1) / lnc * absc + fy1
++
++    (bA, cA, dA), (fE, gE, hE) = _affine_to_reference(x, y)
++    pm = _eval_mono(C, mono,
++                    bA[:, None, None] * xp + cA[:, None, None] * yp + dA[:, None, None],
++                    fE[:, None, None] * xp + gE[:, None, None] * yp + hE[:, None, None])
++    # pm: (n_tris, 3, np_fc, ndof_tri)
++
++    # the element across the edge: neighbour, periodic partner, or none
++    interior = fbc < 0
++    periodic = np.zeros_like(interior)
++    if bc_codes.size:
++        periodic[~interior] = bc_codes[fbc[~interior]] == BC_PERIODIC
++    other = np.where(interior, mesh.tri_neighbour, 0)
++    ox = np.zeros((n_tris, 3))
++    oy = np.zeros((n_tris, 3))
++    if np.any(periodic):
++        pi, pj = np.nonzero(periodic)
++        for i, j2 in zip(pi, pj):
++            pair = int(mesh.face_pair[fcid[i, j2]])
++            bc_p = int(mesh.face_bc[pair])
++            other[i, j2], _ = mesh.adjacent(pair)
++            ox[i, j2] = float(bc_xoff[bc_p])
++            oy[i, j2] = float(bc_yoff[bc_p])
++    xo = nodes[mesh.tri_nodes[other], 0] + ox[..., None]     # (n_tris, 3, 3)
++    yo = nodes[mesh.tri_nodes[other], 1] + oy[..., None]
++    (bA2, cA2, dA2), (fE2, gE2, hE2) = _affine_to_reference(
++        xo.reshape(-1, 3), yo.reshape(-1, 3))
++    rs = (n_tris, 3, 1)
++    pl = _eval_mono(C, mono,
++                    bA2.reshape(rs) * xp + cA2.reshape(rs) * yp + dA2.reshape(rs),
++                    fE2.reshape(rs) * xp + gE2.reshape(rs) * yp + hE2.reshape(rs))
++
++    coupled = np.zeros((n_tris, 3, ndof_tri, ndof_tri))
++    single = np.zeros((n_tris, 3, ndof_tri))
++    for q in range(np_fc):
++        coupled += (pm[:, :, q, :, None] * pl[:, :, q, None, :]) * weig[:, :, q, None, None]
++        single += pm[:, :, q, :] * weig[:, :, q, None]
++    both = interior | periodic
++    int_tri_tri_fc = np.where(both[..., None, None], coupled,
++                              np.broadcast_to(single[..., None], coupled.shape))
+ 
+     # -- element quadrature ------------------------------------------------
+     qax, qay, qw = tri_quadrature(np_tri)
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/sweep.py solution/pybte/sweep.py
+--- environment/pybte/sweep.py	2026-09-10 17:34:36.772858164 +0800
++++ solution/pybte/sweep.py	2026-09-14 03:08:06.250037475 +0800
+@@ -124,12 +124,18 @@
+         self.mode = "precomputed"
+ 
+     # -- the sweep ---------------------------------------------------------
+-    def sweep(self, mom, vdf) -> None:
+-        """One transport sweep, in place on ``vdf`` (ndir, n_tris, ndof)."""
++    def sweep(self, mom, vdf, bc_temp=None) -> None:
++        """One transport sweep, in place on ``vdf`` (ndir, n_tris, ndof).
++
++        ``bc_temp`` overrides the wall temperatures for this sweep only;
++        the Krylov driver passes zeros to evaluate the homogeneous part of
++        the (affine) sweep operator.
++        """
++        bc_temp = self.bc_temp if bc_temp is None else bc_temp
+         if self.kernel == "numpy":
+             from .sweep_reference import sweep_reference
+ 
+-            sweep_reference(self, mom, vdf)
++            sweep_reference(self, mom, vdf, bc_temp=bc_temp)
+             self.sweep_count += 1
+             return
+         if self.mode == "precomputed":
+@@ -138,7 +144,7 @@
+                 self.tau_r, self.tau_n, PI,
+                 self.mass, self.ttfc, self.nx, self.ny, self.tri_faces,
+                 self.face_bc, self.neighbour, self.periodic_tri,
+-                self.bc_type, self.bc_temp, self.flux_wall,
++                self.bc_type, bc_temp, self.flux_wall,
+                 mom.ts, mom.qxs, mom.qys, self.lu, self.piv, vdf)
+         else:
+             _kernels.sweep_onthefly(
+@@ -147,7 +153,7 @@
+                 self.mass, self.gx, self.gy, self.fcm, self.ttfc,
+                 self.nx, self.ny, self.tri_faces, self.face_bc,
+                 self.neighbour, self.periodic_tri, self.bc_type,
+-                self.bc_temp, self.flux_wall, mom.ts, mom.qxs, mom.qys, vdf)
++                bc_temp, self.flux_wall, mom.ts, mom.qxs, mom.qys, vdf)
+         self.sweep_count += 1
+ 
+     # -- true transport residual --------------------------------------------------------------
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/pybte/sweep_reference.py solution/pybte/sweep_reference.py
+--- environment/pybte/sweep_reference.py	2026-09-10 17:34:36.772958702 +0800
++++ solution/pybte/sweep_reference.py	2026-09-14 03:08:06.250257615 +0800
+@@ -19,8 +19,9 @@
+ __all__ = ["sweep_reference"]
+ 
+ 
+-def sweep_reference(ctx, mom, vdf) -> None:
++def sweep_reference(ctx, mom, vdf, bc_temp=None) -> None:
+     """One sweep, in place on ``vdf`` with shape ``(ndir, n_tris, ndof)``."""
++    bc_temp = ctx.bc_temp if bc_temp is None else bc_temp
+     nd = ctx.mass.shape[0]
+     n_tris = ctx.order.shape[1]
+     ndir = ctx.cxv.size
+@@ -73,7 +74,7 @@
+                 elif ctx.bc_type[bc] == 2:
+                     src -= w * (-ctx.flux_wall[fc])
+                 else:
+-                    tw = cv / 4.0 / PI * ctx.bc_temp[bc]
++                    tw = cv / 4.0 / PI * bc_temp[bc]
+                     src -= w * (tw * ctx.ttfc[i, il, :, 0])
+ 
+             lu, piv = lu_factor(a)
+diff -ruN -x __pycache__ -x '*.pyc' -x .pytest_cache -x out environment/tests/unit/test_accel.py solution/tests/unit/test_accel.py
+--- environment/tests/unit/test_accel.py	1970-01-01 08:00:00.000000000 +0800
++++ solution/tests/unit/test_accel.py	2026-09-14 04:44:14.535684841 +0800
+@@ -0,0 +1,166 @@
++"""The Krylov outer solver and its coarse-angle synthetic preconditioner.
++
++Gate: the accelerated solver must land on the *same* discrete fixed point
++the plain source iteration converges to, and its reported residual must be
++the transport residual a verifier would compute from the distribution.
++"""
++from __future__ import annotations
++
++import numpy as np
++import pytest
++
++from pybte import Case, Solver
++from pybte._kernels import transport_residual
++from pybte.accel import (CoarsePreconditioner, CoarseSystem, MomentOperator,
++                         coarse_quadrature, gmres, nested_dissection)
++from pybte.constants import PI
++
++from ..conftest import CASES
++
++FAMILIES = {"F1": "F1_1e-3.yaml", "F2": "F2_1e-3.yaml", "F3": "F3_1e-3.yaml"}
++
++
++def _case(name, **flow):
++    c = Case.from_yaml(CASES / name)
++    c.output.field = c.output.run_record = c.output.runtime_log = False
++    for k, v in flow.items():
++        setattr(c.flow, k, v)
++    return c
++
++
++def _strict_residual(solver):
++    """``||A f - b|| / ||b_wall||`` from the shipped residual kernel."""
++    ctx, mom, vdf = solver.ctx, solver.mom, solver.vdf
++    ndir = ctx.cxv.size
++    num = np.zeros(ndir)
++    den = np.zeros(ndir)
++    transport_residual(ctx.cxv, ctx.cyv, ctx.domega, ctx.cv, ctx.vg,
++                       ctx.tau_r, ctx.tau_n, ctx.tau_c, PI,
++                       ctx.mass, ctx.gx, ctx.gy, ctx.fcm, ctx.ttfc, ctx.nx, ctx.ny,
++                       ctx.tri_faces, ctx.face_bc, ctx.neighbour, ctx.periodic_tri,
++                       ctx.bc_type, ctx.bc_temp, ctx.flux_wall,
++                       mom.ts, mom.qxs, mom.qys, vdf, num, den)
++    op = MomentOperator(solver)
++    op._setup_residual()
++    return np.sqrt(num.sum()) / op.boundary_norm, np.sqrt(num.sum() / den.sum())
++
++
++def test_gmres_solves_a_small_system():
++    rng = np.random.default_rng(3)
++    n = 40
++    A = np.eye(n) + 0.3 * rng.normal(size=(n, n))
++    b = rng.normal(size=n)
++    x, hist, y = gmres(lambda v: A @ v, b, tol=1e-12, relative_to="rhs")
++    assert np.linalg.norm(A @ x - b) / np.linalg.norm(b) < 1e-11
++    # with a preconditioner it converges in one step
++    Ainv = np.linalg.inv(A)
++    x, hist, y = gmres(lambda v: A @ v, b, precond=lambda v: Ainv @ v, tol=1e-12,
++                       relative_to="rhs")
++    assert len(hist) == 1 and np.allclose(x, Ainv @ b)
++
++
++def test_coarse_quadrature_moments():
++    for n in (4, 5, 6, 8):
++        cx, cy, w = coarse_quadrature(n)
++        assert w.sum() == pytest.approx(4 * PI)
++        assert abs((w * cx).sum()) < 1e-14 and abs((w * cy).sum()) < 1e-14
++        assert (w * cx * cx).sum() == pytest.approx(4 * PI / 3)
++        assert (w * cy * cy).sum() == pytest.approx(4 * PI / 3)
++        assert abs((w * cx * cy).sum()) < 1e-14
++
++
++def test_nested_dissection_is_a_permutation(shipped_mesh):
++    cent = shipped_mesh.nodes[shipped_mesh.tri_nodes].mean(axis=1)
++    adj = [[int(t) for t in shipped_mesh.tri_neighbour[i] if t >= 0]
++           for i in range(shipped_mesh.n_tris)]
++    perm = nested_dissection(cent, adj)
++    assert np.array_equal(np.sort(perm), np.arange(shipped_mesh.n_tris))
++
++
++@pytest.mark.parametrize("name", ["F1_1e-1.yaml", "F2_1e-1.yaml"])
++def test_coarse_assembly_reproduces_the_sweep(name):
++    """Assembled with the *fine* quadrature, the coupled system's direct
++    solution is a fixed point of the shipped sweep: the assembly encodes
++    exactly the operator the kernels apply, walls included."""
++    c = _case(name)
++    c.velmesh.npole, c.velmesh.nazim = 4, 8
++    s = Solver(c)
++    op = MomentOperator(s)
++    cs = CoarseSystem.build(s.ctx, op, s.ctx.cxv, s.ctx.cyv, s.ctx.domega)
++    pre = CoarsePreconditioner(op, cs)
++    cvec = op.constant()
++    x = pre(cvec)                       # (I - L)^{-1} c, exactly
++    Lx = op.apply_L(x)
++    assert np.linalg.norm(Lx + cvec - x) / np.linalg.norm(x) < 1e-12
++
++
++@pytest.mark.parametrize("fam", sorted(FAMILIES))
++def test_krylov_reaches_the_source_iteration_fixed_point(fam):
++    """Where CIS converges, both schemes give the same answer."""
++    c = _case(FAMILIES[fam], tau_r=1.0, tau_n=1.0)
++    c.velmesh.npole, c.velmesh.nazim = 4, 8
++    c.scheme.accel = "cis"
++    c.iteration.tol = 1e-13
++    c.iteration.tmax = 5000
++    a = Solver(c)
++    ra = a.run()
++    assert ra.converged
++
++    c = _case(FAMILIES[fam], tau_r=1.0, tau_n=1.0)
++    c.velmesh.npole, c.velmesh.nazim = 4, 8
++    b = Solver(c)
++    rb = b.run()
++    assert rb.converged and rb.iterations < ra.iterations
++    assert np.abs(rb.temp - ra.temp).max() <= 1e-7 * np.abs(ra.temp).max()
++    assert np.abs(b.vdf - a.vdf).max() <= 1e-7 * np.abs(a.vdf).max()
++
++
++@pytest.mark.parametrize("fam", sorted(FAMILIES))
++def test_stiff_cases_converge_to_the_discrete_system(fam):
++    """The shipped cases at tau_R = 1e-3, where source iteration needs tens
++    of thousands of sweeps: a few sweeps, a transport residual far below
++    1e-7 in the strictest normalisation, and moments consistent with the
++    distribution."""
++    c = _case(FAMILIES[fam])
++    s = Solver(c)
++    rec = s.run()
++    assert rec.converged
++    assert rec.iterations == rec.sweep_count <= 20
++    strict, shipped = _strict_residual(s)
++    assert strict < 1e-8 and shipped < 1e-8
++    assert rec.final_residual == pytest.approx(strict, rel=1e-6)
++    # the reported temperature is the one recomputed from the distribution
++    from pybte.moments import Moments, compute_moments
++    m = Moments.zeros(s.ndof, s.n_tris)
++    compute_moments(s.vdf, s.ctx.cxv, s.ctx.cyv, s.ctx.domega,
++                    s.integrals.int_tri, c.flow.cv, m)
++    assert np.array_equal(m.temp, rec.temp)
++
++
++def test_hydrodynamic_regime_uses_six_directions():
++    c = _case("F2_10_1e-2.yaml")
++    s = Solver(c)
++    rec = s.run()
++    assert rec.converged and rec.diagnostics["coarse_dirs"] == 6
++    assert rec.iterations <= 20
++
++
++def test_sweep_still_callable_after_run():
++    """Gate 4: ``solver.ctx.sweep(solver.mom, solver.vdf)`` performs one full
++    sweep from the current moments -- and at the fixed point it is idle."""
++    c = _case("F1_1e-2.yaml")
++    s = Solver(c)
++    s.run()
++    before = s.vdf.copy()
++    n = s.ctx.sweep_count
++    s.ctx.sweep(s.mom, s.vdf)
++    assert s.ctx.sweep_count == n + 1
++    assert np.abs(s.vdf - before).max() <= 1e-7 * np.abs(before).max()
++
++
++def test_cis_scheme_still_available():
++    c = _case("F1_1e-1.yaml")
++    c.scheme.accel = "cis"
++    c.iteration.tmax = 20
++    rec = Solver(c).run()
++    assert rec.scheme == "CIS" and rec.iterations == 20 and not rec.converged

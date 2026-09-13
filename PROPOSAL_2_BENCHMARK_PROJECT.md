@@ -453,7 +453,16 @@ the submission's own single-threaded sweep, capped by the verifier's: **5/5 pass
 GMRES (coarse-angle x3, sparse low-order x1, diffusion-type x1); none touched the sweep kernel,
 which the unit makes pointless; 3/5 hit the 2 h cap with a passing solution in place. An
 intermediate wall-clock-unit rule was tried and withdrawn after one trial spent its budget
-compiling sweep kernels. `experiments/results/t01-square*/NOTES.md`.
+compiling sweep kernels. **Third k=5 (2026-09-10 – 14), three families — F3 periodic side
+walls added — verifier v0.3.2**: **5/5 pass, 456x – 1 157x** (geometric mean 831x, spread 2.5x;
+oracle 27x), every trial graded from its archived tree on an idle machine. F3 stopped nobody:
+all five carried the periodic partner's distribution in the state (four GMRES solutions) or
+wrote their correction into it (one classical synthetic acceleration without Krylov). The score
+separates them — coarse-angle-transport preconditioners 1 119x / 1 157x, moment-block
+preconditioners 800x / 839x, synthetic correction 456x. Two trials were voided (usage limit,
+no solution written) and replaced. Two grading faults the run exposed — the periodic family
+timed cold, and the sandbox's compiled-kernel cache inside the timing — were fixed in v0.3.2
+and every trial re-scored. `experiments/results/t01-square*/NOTES.md`.
 
 ### Phase B — abstraction and tooling (2 weeks)
 
@@ -489,7 +498,7 @@ ablation) is reachable in ~12 weeks by trimming Phase C and D.
 
 Eleven families, all realisable from this codebase. `solver/` and `oracle/` given for each.
 
-### T01 — Square-domain acceleration, two wall families `[flagship, built]`
+### T01 — Square-domain acceleration, three wall families `[flagship, built, run k=5]`
 `tasks/t01-square`, §2. Baseline: source iteration only. Ask: converge every cell to the
 shipped solver's own fixed point, fast. Oracle: Krylov (§1.4). Gates and score as in §2.
 Families: F1 isothermal, F2 diffusely reflecting side walls, **F3 periodic side walls**.
@@ -500,6 +509,8 @@ gate on the two stiff cells. The oracle handles it by carrying the partner eleme
 outflow on every periodic face, for every direction, in its state (24 000 extra entries);
 it converges to CIS's fixed point on all five F3 points in 27 .. 1 063 sweeps, no more than
 on F2. The mechanism is ablated out of the environment and its name is a forbidden term.
+Run k=5 (§6): 5/5 pass, 456x – 1 157x; F3 did not discriminate — every trial carried the
+partner's distribution in its state or its correction.
 
 ### T02 — Hydrodynamic-limit acceleration
 Sweep `TAU_N → 0` at fixed large `TAU_R` — a *different* stiff limit, in which a
@@ -686,13 +697,12 @@ Sandbox compute (Modal or Daytona) is a much smaller line item.
 
 ## 10. Immediate next actions
 
-1. Record the `t01-square` k=5 result (gate pass rate, score range) in §6 and in the root
-   README; read every transcript, code the approaches.
-2. **F3, periodic side walls**: implement the periodic temperature-jump boundary; extend the
-   Krylov oracle to periodic faces (carry the periodic-face outflow in the state, or close
-   each direction's periodic coupling exactly); calibrate, certify references, validate;
-   add to `t01-square` as a third family and re-run k=5. This is the one family with
-   evidence of discriminating against the unaided GMRES solution.
+1. **Done (2026-09-14).** The `t01-square` k=5 results are in §6 and the root README;
+   every transcript read and the approaches coded in `experiments/results/t01-square*/NOTES.md`.
+2. **Done (2026-09-14).** F3 periodic side walls built (oracle carries the periodic-face
+   outflow in its state), validated, added as a third family and run k=5: 5/5 pass,
+   456x – 1 157x. It did not discriminate against the state-carrying GMRES solutions every
+   trial produced; the score, not the gate, is what separates them at the top.
 3. Tier-1 families that are not about the outer iteration and therefore not Krylov-solvable:
    T05 (boundary-condition restoration), T09 (manufactured solutions), T10 (sweep cycles).
 4. Docker isolation (`run_rollouts.py --isolation docker`) before any number is published:

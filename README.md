@@ -21,14 +21,16 @@ faster it gets there.
   sweep-equivalents, timed by the grader. Loosening a tolerance, damping the physics or declaring
   convergence on another quantity cannot pass.
 * **Frontier agents pass, with domain knowledge.** Full GMRES on the
-  source-iteration operator already passes every gate (oracle: 34x); in
-  two k=5 runs every valid Claude Opus 5 trial went further and built a
-  physics-based low-order preconditioner that makes the iteration count
-  nearly Knudsen-independent — in 1–2 hours each — scoring 548x – 974x
-  under the final rule. The benchmark's signal is therefore the *score
-  spread* across agents, models and scaffolds (1.8x within one model here),
-  and the gate pass rate of weaker ones — not whether the strongest model
-  passes.
+  source-iteration operator already passes every gate (oracle: 27x on the
+  three-family task); in three k=5 runs every valid Claude Opus 5 trial
+  went further and built a physics-based low-order operator — as a GMRES
+  preconditioner, or once as a classical synthetic correction — that makes
+  the iteration count nearly Knudsen-independent, in 1–2 hours each,
+  scoring 456x – 1 157x on the three-family task under the final rule. The
+  benchmark's signal is therefore the *score spread* across agents, models
+  and scaffolds (2.5x within one model here, and it separates the
+  preconditioners), and the gate pass rate of weaker ones — not whether the
+  strongest model passes.
 * **The published accelerated scheme does not pass.** The solver reproduces
   the published GSIS iteration counts on the published 2-D test points
   exactly (CIS 5/5, GSIS 4/5), and at every one of those points GSIS
@@ -58,7 +60,7 @@ Same square, same discretisation (200 elements, `DEG = 2`, `10 x 20`
 angles, `tol = 1e-8`), three boundary families, the five `(Kn_R, Kn_N)` pairs
 of the reference publication's 2-D test:
 
-| cell | regime | source iteration | oracle (Krylov) | speed-up |
+| cell | regime | source iteration | oracle (Krylov) | speed-up (sweep count) |
 |---|---|---|---|---|
 | F1 (0.001, 1e5) | deep diffusive | > 200 000 | 992 | >= 201x |
 | F1 (0.01, 1e5) | diffusive | 16 830 | 228 | 74x |
@@ -84,12 +86,15 @@ the partner's outflow in its state. Score = geometric mean of the speed-ups per 
 then across families, in **sweep-equivalents** (end-to-end wall-clock over
 the time of one fine sweep, both timed by the verifier in-session, setup
 included) so that work moved out of the sweep is paid for at its real cost.
-The oracle scores 19.4x under this rule (42x by raw sweep count).
+The oracle scores 27x under this rule (42x by raw sweep count, the last column).
 
 **Gates** (every cell): converged within cap; transport residual
 `< 1e-7` in the pristine tree; field within `1e-5` of the certified
-reference. **Validation**: oracle passes 5/5, null baseline fails 5/5,
-pathology preserved in both families, worst verification 346 s.
+reference. **Validation** (verifier v0.3.2): oracle passes and null baseline fails on
+every run, pathology preserved in all three families, worst verification
+447 s. Every cell is graded in a cache-free copy of the submission after an
+untimed warm-up of the same kind of case on a coarser mesh, so a score is
+reproducible from the archived tree.
 
 ## Agent results
 
@@ -98,6 +103,7 @@ pathology preserved in both families, worst verification 346 s.
 | isothermal-only precursor | Claude Opus 5 + Claude Code | 1 | 1/1 | — | 44 min, $7; full GMRES, self-written |
 | t01-square | Claude Opus 5 + Claude Code | 5 (4 valid) | 4/4 | 989x – 3 293x (sweep-count rule) | all four built a physics-based preconditioner for GMRES (3x coarse-angle transport, 1x moment system), 6–37 sweeps per cell; 1 trial invalid (account quota). Solutions lost to a reboot before re-scoring under the sweep-equivalent rule; see `experiments/results/t01-square/NOTES.md`. |
 | t01-square, sweep-equivalent rule | Claude Opus 5 + Claude Code | 5 | **5/5** | **548x – 974x** (geo-mean 762x; oracle 34x) | every trial: GMRES + a physics-based low-order preconditioner (coarse-angle x3, sparse low-order x1, diffusion-type x1); nobody touched the sweep kernel; 3/5 hit the 2 h cap with a passing solution in place. Solutions archived. `experiments/results/t01-square-C2/NOTES.md`. |
+| t01-square, three families (F1 / F2 / **F3 periodic**), verifier v0.3.2 | Claude Opus 5 + Claude Code | 5 (+2 voided: usage limit, no solution) | **5/5** | **456x – 1 157x** (geo-mean 831x, spread 2.5x; oracle 27x) | F3 stopped nobody: every trial carried the periodic partner's distribution in its state or its correction. Four GMRES + low-order preconditioner (coarse-angle transport x2 at 1 119x / 1 157x, moment-block x2 at 800x / 839x), one classical synthetic acceleration without Krylov (456x). All five hit the 2 h cap with a passing solution in place. Two grading faults this run exposed (periodic family graded cold; sandbox kernel cache in the timing) were fixed and every trial re-scored from its archive. `experiments/results/t01-square-F3/NOTES.md`. |
 
 Transcripts and per-cell scores are under `experiments/results/`.
 

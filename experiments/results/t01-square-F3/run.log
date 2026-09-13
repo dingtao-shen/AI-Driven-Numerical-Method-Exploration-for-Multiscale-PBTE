@@ -10,3 +10,40 @@ trial 2: agent running ...
 trial 2: gate PASS   score 740.0x   15/15 cells   agent 120 min   (timed out; graded as left)
 
 trial 3: agent running ...
+trial 3: gate PASS   score 424.0x   15/15 cells   agent 120 min   (timed out; graded as left)
+
+trial 4: agent running ...
+trial 4: gate FAIL   score -   7/15 cells   agent 16 min
+
+trial 5: agent running ...
+trial 5: gate FAIL   score -   7/15 cells   agent 0 min
+
+ trial  gate    score  cells  minutes
+     1  True   689.1x  15/15      120
+     2  True   740.0x  15/15      120
+     3  True   424.0x  15/15      120
+     4 False        -   7/15       16
+     5 False        -   7/15        0
+
+3/5 passed every gate
+score range 424.0x .. 740.0x -- spread across trials/models is the benchmark's signal now, not pass rate
+task       t01-square
+model      opus   isolation dir   k=5
+sandboxes  /home/dtshen/rollout-sandboxes/t01-square-F3
+results    experiments/results/t01-square-F3
+
+trial 4: agent running ...
+trial 4: gate PASS   score 1148.8x   15/15 cells   agent 120 min   (timed out; graded as left)
+
+trial 5: agent running ...
+trial 5: gate PASS   score 1157.4x   15/15 cells   agent 120 min   (timed out; graded as left)
+
+ trial  gate    score  cells  minutes
+     1  True   662.3x  15/15      120
+     2  True   715.7x  15/15      120
+     3  True   423.5x  15/15      120
+     4  True  1148.8x  15/15      120
+     5  True  1157.4x  15/15      120
+
+5/5 passed every gate
+score range 423.5x .. 1157.4x -- spread across trials/models is the benchmark's signal now, not pass rate
