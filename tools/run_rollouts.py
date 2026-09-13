@@ -132,9 +132,18 @@ def parse_stream(stdout: str) -> dict:
             continue
         if d.get("type") == "result":
             meta.update({k: d.get(k) for k in ("num_turns", "total_cost_usd", "duration_ms",
-                                               "is_error", "subtype", "result")})
+                                               "is_error", "subtype", "result",
+                                               "api_error_status", "terminal_reason")})
             meta["result_event"] = True
     return meta
+
+
+def voided_reason(meta: dict) -> str | None:
+    """A trial the *harness* ended -- an API error such as a usage limit --
+    measures nothing about the agent and must not count as a failure."""
+    if meta.get("is_error") and meta.get("api_error_status"):
+        return f"api error {meta['api_error_status']}: {str(meta.get('result'))[:80]}"
+    return None
 
 
 def archive_solution(task: Path, box: Path, out_dir: Path, trial: int) -> None:
@@ -190,6 +199,9 @@ def main(argv=None) -> int:
                     help="where to put the agents' working copies; must be "
                          "outside the repository")
     ap.add_argument("--out", type=Path, default=None)
+    ap.add_argument("--trials", type=int, nargs="*", default=None,
+                    help="trial numbers to run (default 1..k); use to replace "
+                         "voided trials -- earlier rows in summary.json are kept")
     args = ap.parse_args(argv)
 
     task = args.task.resolve()
@@ -208,8 +220,9 @@ def main(argv=None) -> int:
     print(f"results    {out_dir}\n")
 
     runner = run_agent_docker if args.isolation == "docker" else run_agent_dir
+    trials = args.trials or list(range(1, args.k + 1))
     rows = []
-    for i in range(1, args.k + 1):
+    for i in trials:
         box = make_sandbox(task, sandbox_root, i)
         print(f"trial {i}: agent running ...", flush=True)
         try:
@@ -235,29 +248,44 @@ def main(argv=None) -> int:
         cells = [c for f in res.get("families", {}).values() for c in f["cells"]]
         n = sum(1 for c in cells if c.get("passed"))
         fam = {k: (f["gate"], f["score"]) for k, f in res.get("families", {}).items()}
+        voided = voided_reason(meta)
         rows.append({"trial": i, "gate": bool(res.get("gate")), "score": res.get("score"),
                      "families": fam, "cells_passed": n, "cells": len(cells),
                      "agent_wall": agent["wall"], "timed_out": bool(agent.get("timed_out")),
                      "turns": meta.get("num_turns"), "cost_usd": meta.get("total_cost_usd"),
                      "events": meta.get("events"),
                      "agent_returncode": agent["returncode"],
+                     "voided": voided,
                      "sandbox": str(box)})
         sc = f"{res['score']:.1f}x" if res.get("score") else "-"
         print(f"trial {i}: gate {'PASS' if res.get('gate') else 'FAIL'}   score {sc}   "
               f"{n}/{len(cells)} cells   agent {agent['wall'] / 60:.0f} min"
-              f"{'   (timed out; graded as left)' if agent.get('timed_out') else ''}\n", flush=True)
+              f"{'   (timed out; graded as left)' if agent.get('timed_out') else ''}"
+              f"{f'   VOIDED -- {voided}' if voided else ''}\n", flush=True)
 
-    solved = sum(1 for r in rows if r["gate"])
+    # Rows from an earlier invocation (a run resumed, or voided trials being
+    # replaced with --trials) are kept; a re-run trial number replaces its row.
+    summary_path = out_dir / "summary.json"
+    if summary_path.exists():
+        old = json.loads(summary_path.read_text()).get("trials", [])
+        done = {r["trial"] for r in rows}
+        rows = sorted(rows + [r for r in old if r["trial"] not in done],
+                      key=lambda r: r["trial"])
+    counted = [r for r in rows if not r.get("voided")]
+    solved = sum(1 for r in counted if r["gate"])
     summary = {"task": task.name, "model": args.model, "k": args.k,
-               "isolation": args.isolation, "solved": solved, "trials": rows}
-    (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+               "isolation": args.isolation, "solved": solved,
+               "voided": len(rows) - len(counted), "trials": rows}
+    summary_path.write_text(json.dumps(summary, indent=2))
 
     print(f"{'trial':>6} {'gate':>5} {'score':>8} {'cells':>6} {'minutes':>8}")
     for r in rows:
         sc = f"{r['score']:.1f}x" if r["score"] else "-"
         print(f"{r['trial']:6d} {str(r['gate']):>5} {sc:>8} "
-              f"{r['cells_passed']:3d}/{r['cells']:<2d} {r['agent_wall'] / 60:8.0f}")
-    print(f"\n{solved}/{args.k} passed every gate")
+              f"{r['cells_passed']:3d}/{r['cells']:<2d} {r['agent_wall'] / 60:8.0f}"
+              f"{'   voided' if r.get('voided') else ''}")
+    print(f"\n{solved}/{len(counted)} passed every gate"
+          + (f"   ({len(rows) - len(counted)} voided, not counted)" if len(rows) != len(counted) else ""))
     if solved == 0:
         print("0/k -- read every transcript before concluding the task is hard; "
               "failures on imports, paths or an unclear prompt mean it is broken")

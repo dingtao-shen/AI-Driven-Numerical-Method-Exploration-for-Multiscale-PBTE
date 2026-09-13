@@ -102,6 +102,12 @@ def score_cell(name, cell, env, pristine, spec, tmp):
     if err:
         res.update(error=err, passed=False)
         return res
+    if run.get("warm_up") != "ok":
+        # A cold run is charged for the JIT; that is a verifier fault, not a
+        # property of the submission, and the cell must not be scored on it.
+        res.update(run, error=f"verifier warm-up did not run: {run.get('warm_up')}",
+                   passed=False)
+        return res
     res.update(run)
     ev, err = run_stage("evaluate.py", pristine, case_path, dump, ref)
     if err or "error" in (ev or {}):

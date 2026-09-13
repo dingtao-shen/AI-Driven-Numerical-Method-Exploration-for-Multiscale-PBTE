@@ -1,7 +1,7 @@
 name = "t01-square"
 family = "square-domain-acceleration"
 flagship = true
-version = "0.3.0"
+version = "0.3.1"
 
 summary = """
 A correct but unaccelerated kinetic transport solver on a square degrades by
