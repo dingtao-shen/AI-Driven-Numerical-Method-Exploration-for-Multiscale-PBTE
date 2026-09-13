@@ -26,6 +26,11 @@ benchmark scores only if every family does.
    and performs one fine transport sweep; the verifier times it to set the
    unit below.
 
+Every cell is run in a *copy* of the submission with no compiled-kernel
+cache, after an untimed warm-up of the same kind of case on a coarser mesh
+(``run_agent_case.py``), so the timing is of the method and is reproducible
+from the archived tree.
+
 **Score**: on the cells where the unaccelerated solver is slow, the speed-up
 over it in *sweep-equivalents*, combined as a geometric mean.  The
 submission's cost is its ``Case + Solver + run`` wall-clock (setup included)
@@ -51,6 +56,7 @@ import argparse
 import json
 import math
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -171,6 +177,13 @@ def main(argv=None) -> int:
 
     families = {}
     with tempfile.TemporaryDirectory() as td:
+        # Grade a copy of the submission with no compiled-kernel cache in it:
+        # what a submission happened to run before grading must not change
+        # its timing, and a re-score of the archived tree must reproduce it.
+        graded = Path(td) / "environment"
+        shutil.copytree(env, graded, symlinks=True,
+                        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".pytest_cache", "out"))
+        env = graded
         for fam, fspec in spec["families"].items():
             if args.families and fam not in args.families:
                 continue

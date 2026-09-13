@@ -5,10 +5,11 @@ Touches only the public interface the task promises -- ``Case.from_yaml``,
 internals cannot break it.
 
 Timing is the whole of ``Case.from_yaml + Solver(case) + run()`` for the
-graded case, after a warm-up solve on a *different, coarser mesh* with every
-wall thermalising: the warm-up gets kernels compiled and caches loaded so
-the measurement is of the method and not of the JIT, while a different mesh
-means nothing about the graded case can have been precomputed or memoised.
+graded case, after a warm-up solve of the *same kind of case on a coarser
+mesh*: the warm-up gets every kernel the graded run uses compiled and its
+cache loaded, so the measurement is of the method and not of the JIT, while
+a different mesh means nothing about the graded case can have been
+precomputed or memoised.
 Setup is inside the timing on purpose -- a method that moves all its work
 into "setup" still pays for it.
 
@@ -37,21 +38,22 @@ from pybte import Case, Solver                                    # noqa: E402
 
 spec = yaml.safe_load(Path(case_path).read_text())
 
-# -- warm-up on a coarser mesh, all walls thermalising, three iterations --
-# The boundary *names* are replaced too: the mesh reader pairs periodic faces
-# by the names "Master"/"Slave", and a thermalising wall that still carries
-# one of those names (with its offset dropped) fails the pairing and throws.
+# -- warm-up: the graded case's own wall types, on the coarse mesh of the ----
+# -- same family, three iterations ------------------------------------------
+# Every kernel the graded run will touch -- thermalising, reflecting or
+# periodic walls -- is compiled and its disk cache loaded here, where it is
+# not timed.  A warm-up that only exercised thermalising walls left the first
+# reflecting-wall cell of a run to compile inside its own timing (~1 s, a
+# fivefold penalty on a 0.2 s run), and one that dropped the periodic offsets
+# while keeping the Master/Slave names failed the mesh reader's pairing and
+# graded the whole periodic family cold.
 warm_note = ""
 try:
     w = copy.deepcopy(spec)
-    w["mesh"]["file"] = str(Path(spec["mesh"]["file"]).parent / "A1_Nx6_Ny6.msh")
+    mesh = Path(spec["mesh"]["file"])
+    w["mesh"]["file"] = str(mesh.parent / f"{mesh.name.split('_')[0]}_Nx6_Ny6.msh")
     w["flow"]["tau_r"] = 1.0
     w["iteration"]["tmax"] = 3
-    for i, b in enumerate(w["boundaries"]):
-        b["name"] = f"Wall{i}"
-        b["type"] = "thermalising"
-        b.pop("xoff", None)
-        b.pop("yoff", None)
     with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as fh:
         yaml.safe_dump(w, fh, sort_keys=False)
         wpath = fh.name
