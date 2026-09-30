@@ -1,0 +1,51 @@
+{
+  "local_smoke_ready": true,
+  "environment": {
+    "python": "3.11.13 (main, Jun  5 2025, 13:12:00) [GCC 11.2.0]",
+    "executable": "/home/dtshen/miniconda3/envs/dev/bin/python",
+    "dependencies": {
+      "numpy": "2.0.0",
+      "scipy": "1.16.0",
+      "PyYAML": "6.0.3",
+      "numba": "0.61.2",
+      "pytest": "9.0.3"
+    },
+    "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "processor": "x86_64",
+    "cpu_count": 24,
+    "execution_threads": {
+      "OMP_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1",
+      "NUMBA_NUM_THREADS": "1",
+      "PYTHONHASHSEED": "0"
+    },
+    "jit": "numba when available; original same-family warm-up",
+    "cache_policy": "per-cell cache-free candidate; separate pristine cache",
+    "os_isolation": "not_validated",
+    "execution_policy": "reviewed builtins only"
+  },
+  "pybte_import": "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/solver-python/pybte/__init__.py",
+  "profile_id": "legacy_t01_smoke",
+  "formal_execution_ready": false,
+  "formal_blockers": [
+    "study status is not approved",
+    "formal_execution_enabled is not true",
+    "C01: pending_owner or missing approval",
+    "C02: pending_owner or missing approval",
+    "C03: pending_owner or missing approval",
+    "C04: pending_owner or missing approval",
+    "C05: pending_owner or missing approval",
+    "C06: pending_owner or missing approval"
+  ],
+  "formal_engine": "not_implemented_in_phase0",
+  "input_errors": [],
+  "optional_mode": {
+    "mode": "docker",
+    "os_isolation": "not_validated",
+    "docker_executable": "/usr/bin/docker",
+    "runtime_test": "not_run",
+    "container_claude_installation": "not_demonstrated_by_legacy_Dockerfile"
+  },
+  "artifact_notice": "runs/ is ignored; use export for evidence worth retaining"
+}

@@ -1,0 +1,8 @@
+{
+  "method": "legacy_f3_trial_05",
+  "archive_sha256": "53df5d710bea5ee864ecefca5e5bec8f4373cc3dccc376d97fe2bf887b0d60f6",
+  "members": 71,
+  "entrypoint": "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/workspaces/phase0-f3-recovery/recovered/environment/pybte/driver.py",
+  "code_executed": false,
+  "numerical_replay": "not_run"
+}

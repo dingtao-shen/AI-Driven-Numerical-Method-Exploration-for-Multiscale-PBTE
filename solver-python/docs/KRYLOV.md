@@ -27,7 +27,8 @@ known from the Givens-rotated Hessenberg matrix without an extra sweep.
 **The fixed point is the same as source iteration's** — it is the solution
 of the same linear system — reached to round-off rather than to a
 tolerance. That is what makes this path usable as a reference generator,
-which the shipped GSIS is not (`LIMITATIONS.md` #1).
+subject to per-case residual and field checks. The recorded GSIS discrepancy
+and its unresolved causal interpretation are described in `LIMITATIONS.md` #1.
 
 ## The state must hold everything the sweep reads back
 
@@ -69,7 +70,7 @@ against > 200 000 / 32 343 / 643 / 75 / 2 444.
   (14 → 1 388 from `tau_R = 1` to `1e-5`), far more slowly than source
   iteration. The hydrodynamic corner `(10, 0.01)` is its weakest cell: 4–5x.
 * **Memory.** The basis is `k` vectors of length `3 * NDOF * N_TRIS`
-  (+ wall emission); `k ~ 1 400` at `tau_R = 1e-5` is 40 MB here and would
+  (+ wall emission and periodic partner state); `k ~ 1 400` at `tau_R = 1e-5` is 40 MB here and would
   be tens of GB on a production mesh. `krylov_max_bytes` caps it, at which
   point restarts begin and the count rises.
 * **Preconditioning** by the macroscopic moment system (`krylov_precond`) is

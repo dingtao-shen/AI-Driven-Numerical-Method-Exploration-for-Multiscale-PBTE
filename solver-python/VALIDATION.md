@@ -1,3 +1,7 @@
+> Historical solver validation measurements. Phase0 does not rerun the full research scan.
+> Current regression results are in [STATUS](../docs/STATUS.md). Fixed-point causal
+> interpretations remain unverified; see docs/LIMITATIONS.md.
+
 # VALIDATION
 
 Cross-validation of `pybte` against the Fortran reference, plus the
@@ -38,14 +42,14 @@ in `docs/fixed_point_study.json`.
 ### Reading the `true residual` column
 
 `||A f - b|| / ||b||` for the discrete transport system, evaluated at
-the converged state with no sweep. It is zero exactly at the fixed
-point of whichever scheme produced the state.
+the converged state with no sweep. It vanishes at a solution of the discrete kinetic system; a different
+iteration stopping criterion need not ensure this.
 
 It separates the two schemes: CIS drives it to round-off, **GSIS does
 not** (3.2e-03 against 4.3e-14 at `tau_R = 1e-1`). That is the
 evidence behind `docs/LIMITATIONS.md` #1 and the reason any claim
 that the two schemes share a fixed point to `rtol=1e-8`
-does not hold; `docs/fixed_point_study.json` has the scaling.
+does not hold for the measured implementation/cases; `docs/fixed_point_study.json` has the scaling.
 
 It does **not** expose how far a truncated CIS run is from its own
 answer. For CIS it measures the same moment change the iterate
@@ -134,7 +138,7 @@ a 10-15 minute verification window.
 
 Cells marked **no (TMAX)** are not failures. CIS at `tau_R <= 1e-3` on
 this mesh is effectively non-convergent within any practical budget --
-that is the stiffness the benchmark exists to measure. The iteration
+that is the stiffness motivating acceleration research. The iteration
 count at truncation is recorded so the growth rate can be read off.
 
 ## Reproduction of the published 2-D table

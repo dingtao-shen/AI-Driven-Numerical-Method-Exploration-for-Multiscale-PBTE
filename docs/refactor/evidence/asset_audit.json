@@ -1,0 +1,124 @@
+{
+  "source_revision": "dffff2319b290860b5c4a87509428595bce4d2b0",
+  "protected_files_checked": 378,
+  "protected_changes": [],
+  "archive_checks": {
+    "README.md": {
+      "archive": "docs/archive/stikine_bench/README.original.md",
+      "unchanged": true
+    },
+    "PROPOSAL_2_BENCHMARK_PROJECT.md": {
+      "archive": "docs/archive/stikine_bench/PROPOSAL_2_BENCHMARK_PROJECT.md",
+      "unchanged": true
+    },
+    "solver-python/README.md": {
+      "archive": "docs/archive/stikine_bench/solver-python/README.md",
+      "unchanged": true
+    },
+    "solver-python/VALIDATION.md": {
+      "archive": "docs/archive/stikine_bench/solver-python/VALIDATION.md",
+      "unchanged": true
+    },
+    "solver-python/docs/LIMITATIONS.md": {
+      "archive": "docs/archive/stikine_bench/solver-python/docs/LIMITATIONS.md",
+      "unchanged": true
+    },
+    "solver-python/docs/DEFECT_CORRECTION.md": {
+      "archive": "docs/archive/stikine_bench/solver-python/docs/DEFECT_CORRECTION.md",
+      "unchanged": true
+    },
+    "solver-python/docs/KRYLOV.md": {
+      "archive": "docs/archive/stikine_bench/solver-python/docs/KRYLOV.md",
+      "unchanged": true
+    }
+  },
+  "allowed_engineering_changes": [
+    {
+      "path": ".gitignore",
+      "original_sha256": "01e3fbc0b8b2a234b8aa4ffc512cb7891d47f20e0189afc623ad9fd15abdf043",
+      "current_sha256": "aa626f5c435444b75c7521ada83c7ce2675af3ea9226881bcc6d5a383ab08006",
+      "original_archive": null,
+      "recovery": "dffff2319b290860b5c4a87509428595bce4d2b0:.gitignore"
+    },
+    {
+      "path": "PROPOSAL_2_BENCHMARK_PROJECT.md",
+      "original_sha256": "9fa275fe0ebbb9cf08b30896aaeb3154829f1b276e938dbbc4afd30b2fc7b004",
+      "current_sha256": null,
+      "original_archive": "docs/archive/stikine_bench/PROPOSAL_2_BENCHMARK_PROJECT.md",
+      "recovery": "dffff2319b290860b5c4a87509428595bce4d2b0:PROPOSAL_2_BENCHMARK_PROJECT.md"
+    },
+    {
+      "path": "README.md",
+      "original_sha256": "0474569c9c1e0910c0475d3f21a920805e38ccd8eee23519ddf7f25b75e56ea7",
+      "current_sha256": "8fdf2a25991fd0bad88d8340c1d57d07505e47137531aa7f0280a9be14cb3366",
+      "original_archive": "docs/archive/stikine_bench/README.original.md",
+      "recovery": "dffff2319b290860b5c4a87509428595bce4d2b0:README.md"
+    },
+    {
+      "path": "solver-python/README.md",
+      "original_sha256": "e8eea2083856bee30dfcda388543a3df6744006b3a2b04a146b2f32b33e72646",
+      "current_sha256": "0b536ab41d10a1b2cabbc51d83ef70248283364b96b47902cf5b8a0d268dae7a",
+      "original_archive": "docs/archive/stikine_bench/solver-python/README.md",
+      "recovery": "dffff2319b290860b5c4a87509428595bce4d2b0:solver-python/README.md"
+    },
+    {
+      "path": "solver-python/VALIDATION.md",
+      "original_sha256": "e7af4da17f0f7aafe188f40c08659a157672187c497f069270a491787c23d272",
+      "current_sha256": "825b7be21757108f478091b8a4b6728204973621b81464e6fd924eb849a3733c",
+      "original_archive": "docs/archive/stikine_bench/solver-python/VALIDATION.md",
+      "recovery": "dffff2319b290860b5c4a87509428595bce4d2b0:solver-python/VALIDATION.md"
+    },
+    {
+      "path": "solver-python/docs/DEFECT_CORRECTION.md",
+      "original_sha256": "e2ffc59fa6f9b775250b675b61cf2ac728945c279dc29589eb98b9220a8f1572",
+      "current_sha256": "7532fe3e237021576bc3d1b37b797e539f730326abb0488019624b9a718496ea",
+      "original_archive": "docs/archive/stikine_bench/solver-python/docs/DEFECT_CORRECTION.md",
+      "recovery": "dffff2319b290860b5c4a87509428595bce4d2b0:solver-python/docs/DEFECT_CORRECTION.md"
+    },
+    {
+      "path": "solver-python/docs/KRYLOV.md",
+      "original_sha256": "10d0f676686f4afd4a37eed51106cd4559bfe8167070e3ae407c805147f31a24",
+      "current_sha256": "2357de5304c5ec0e806bf1101888debc55a12d907dfea78a2393915dff9a3a07",
+      "original_archive": "docs/archive/stikine_bench/solver-python/docs/KRYLOV.md",
+      "recovery": "dffff2319b290860b5c4a87509428595bce4d2b0:solver-python/docs/KRYLOV.md"
+    },
+    {
+      "path": "solver-python/docs/LIMITATIONS.md",
+      "original_sha256": "9b07d89cd3d8f06024de19372235e00371b2724bef17280fd3180320b32e5470",
+      "current_sha256": "0c416ba0a951dd3cb5b73de6b728134f6ee1b3916670cf5a24caa224be691099",
+      "original_archive": "docs/archive/stikine_bench/solver-python/docs/LIMITATIONS.md",
+      "recovery": "dffff2319b290860b5c4a87509428595bce4d2b0:solver-python/docs/LIMITATIONS.md"
+    },
+    {
+      "path": "solver-python/pyproject.toml",
+      "original_sha256": "3886f00d257c251bda9d10f720c7c610ba6a04a2a4b644273a24d6741b803210",
+      "current_sha256": "ddcf647ca6f715744450b7d0ac69227d7d7596e90eb99b4568dabe8886cd2431",
+      "original_archive": null,
+      "recovery": "dffff2319b290860b5c4a87509428595bce4d2b0:solver-python/pyproject.toml"
+    },
+    {
+      "path": "tools/make_env.py",
+      "original_sha256": "94dd2d16621f9583ffeff5ce296fe49d50cb0a2ee9120b7e23a5cf4b2a4fca43",
+      "current_sha256": "c4ee927c78b5db4ccf9d9b87cbfe684d03e097bf05e2dd6909f440dc719d2817",
+      "original_archive": null,
+      "recovery": "dffff2319b290860b5c4a87509428595bce4d2b0:tools/make_env.py"
+    },
+    {
+      "path": "tools/rescore_rollouts.py",
+      "original_sha256": "1ace71c4c36aef24db449623f1a8b779feef780ec96b7231fa344fc4a65c13f8",
+      "current_sha256": "50d6299c5780a6862a43adf3d90a842f7e6107fc9accf589943246991f07442d",
+      "original_archive": null,
+      "recovery": "dffff2319b290860b5c4a87509428595bce4d2b0:tools/rescore_rollouts.py"
+    },
+    {
+      "path": "tools/run_rollouts.py",
+      "original_sha256": "0cc0f6dd21d9af02990c5d7cb35af2b0875ccbec01496ceb21500621df4ef7f2",
+      "current_sha256": "c6d890fc75f30c3e109bd9672527fae61bc8959d5127102e195f2cc714a2c3ed",
+      "original_archive": null,
+      "recovery": "dffff2319b290860b5c4a87509428595bce4d2b0:tools/run_rollouts.py"
+    }
+  ],
+  "user_plan_unchanged": true,
+  "canonical_plan_identical": true,
+  "deleted_assets": []
+}

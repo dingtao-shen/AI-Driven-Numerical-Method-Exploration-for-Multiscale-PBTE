@@ -1,10 +1,12 @@
-# Experimental: repairing the GSIS fixed point
+# Experimental correction of the observed GSIS fixed-point discrepancy
 
 **Status: research code, off by default.** Turning it on changes every GSIS
 iteration count. Nothing in the shipped cases, the regression suite, or the
 validation numbers uses it.
 
-Read `LIMITATIONS.md` #1 first; this page assumes it.
+Read `LIMITATIONS.md` #1 first. Tables are historical measurements of this
+implementation; causal explanations below are hypotheses requiring further
+verification, not universal conclusions about GSIS.
 
 ## What is being repaired
 
@@ -23,10 +25,9 @@ o = M* - M(f)
 
 `M*` comes from the HDG synthetic system, `M(f)` from the upwind-DG kinetic
 solution. If the two discretisations were exact moments of one another `o`
-would vanish at convergence and the blend would be inert there. They are not,
-so **`o` is stationary and non-zero at the fixed point** — measured
-`|o_T| = 1.49e-01` at `tau_R = 1e-1`. That stationary offset *is* the
-CIS/GSIS discrepancy.
+would vanish at convergence and the blend would be inert there. The recorded implementation measured a stationary nonzero offset
+`|o_T| = 1.49e-01` at `tau_R = 1e-1`. Establishing its cause requires
+checking the discrete equations and implementation, not just their names.
 
 ## The repair
 
@@ -45,8 +46,8 @@ the shipped scheme bit for bit.
 
 Everything from the sweep through the HDG solve to the blend is linear in the
 state, so `d -> o(d)` is an **affine** map. That is what licenses Anderson
-acceleration on it below, and it is why the analysis here is exact rather than
-heuristic.
+acceleration on it below, under the assumed linear state representation; this does not establish
+the full causal diagnosis or robustness beyond the tested cases.
 
 ## Update policy is the whole story
 
@@ -99,11 +100,9 @@ Gap after a bounded number of outer cycles, `tau_R = 1e-1`, `omega = 1`:
 
 The outer loop contracts at `rho = 0.950` (`omega = 1`) or `0.973`
 (`omega = 0.5`) — against CIS's own `rho ~ 0.977` at this Knudsen number.
-**The defect carries the same slow diffusive mode CIS grinds on**, which is
-exactly why removing it costs what CIS costs. That is the central finding
-here, and it is not a coincidence: the offset is the part of the answer the
-synthetic system gets wrong, and the part it gets wrong is the part the
-acceleration is for.
+The similar contraction factors suggest a slow mode shared with CIS in this
+case. Identifying that mode and attributing it to a specific discretization
+requires further analysis; the measured cost and convergence table are retained.
 
 ### Anderson on the outer loop
 
@@ -154,10 +153,9 @@ faster than source iteration does.
 ### Deep in the diffusive regime the comparison inverts
 
 `tau_R = 1e-3`, everything capped at 60 000 iterations. **CIS never gets a
-usable answer**, so there is nothing to take a gap against; the transport
-residual is the only honest measure, and it needs no reference solution —
-`||A f - b||/||b||` at round-off *is* the certificate that the state is the
-discrete kinetic fixed point.
+usable answer**, so there is nothing to take a gap against; the transport residual remains a useful observation. A small residual alone
+does not certify field accuracy for an ill-conditioned system; reference
+certification and field checks must be stated separately.
 
 | scheme | iterations | outer | transport residual | `int T dA` | wall |
 |---|---|---|---|---|---|
@@ -171,32 +169,19 @@ has a *smaller* transport residual than CIS has after 60 000 — the
 displacement shrinks with `tau_R`, so there is progressively less to repair
 just as CIS becomes progressively less able to serve as a reference. Second,
 the repaired scheme still buys five orders of magnitude on the residual over
-the published one, which is the difference between "close" and "certified".
+the uncorrected implementation. That residual improvement is not itself a
+complete field-accuracy certification.
 
-## Verdict
+## Evidence and limits
 
-* **The repair works.** The fixed point becomes CIS's exactly, for any
-  `beta` and without touching the macroscopic discretisation. This confirms
-  the diagnosis in `LIMITATIONS.md` #1: the displacement is entirely the
-  stationary offset `o` in the blend, nothing else.
-* **The offset is the diffusive mode.** The outer loop contracts at
-  `rho ~ 0.95`, next to CIS's `0.977`. What the synthetic system gets wrong is
-  precisely what the acceleration exists to fix, so removing the error costs
-  on the order of what not having the acceleration costs. Anderson recovers
-  most of that, because the outer map is affine.
-* **It is not a drop-in replacement.** It loses the shipped scheme's
-  Knudsen-independent iteration count, and at `tau_R >= 1e-1` it is slower
-  than plain CIS.
-* **It is worth having where CIS is the bottleneck.** At `tau_R = 1e-2` it is
-  the cheapest way to get a certified exact discrete answer, by 4.3x in wall
-  time over CIS. That makes it a practical *oracle generator* for benchmark
-  work, which is what it was built for.
-* **The clean fix remains out of reach here.** Discretising the synthetic
-  equations as the exact discrete moments of the DG kinetic weak form would
-  make `o` vanish identically, keeping both the fixed point and the
-  Knudsen-independent iteration count. That is a rebuild of the macroscopic
-  discretisation, not a bolt-on, and it would change every published
-  iteration count.
+The retained tables show that the experimental correction can reduce the observed
+fixed-point discrepancy in sampled cases, sometimes at substantially higher
+iteration cost. The `tau_R = 1e-2` comparison reported 4.3x lower wall time than
+its CIS comparison; those historical timings are not a new-protocol score.
+The correction is off by default. Its diagnosis, broader parameter robustness,
+and compatibility with alternative synthetic discretizations remain unverified.
+It is not automatically the preferred reference generator; certification must
+be recorded case by case, and the existing Krylov path is documented separately.
 
 ## Configuration
 
@@ -209,7 +194,7 @@ scheme:
   defect_anderson: 8    # Anderson window on the outer sequence; 0 = plain
 ```
 
-Recommended for oracle work: `defect_omega: 1.0`, `defect_every: 0`,
+Historical experimental configuration: `defect_omega: 1.0`, `defect_every: 0`,
 `defect_anderson: 8`. Do not use `defect_every: 1` — see the first table.
 
 Diagnostics land in `RunRecord.diagnostics`: `defect_omega`, `defect_every`,

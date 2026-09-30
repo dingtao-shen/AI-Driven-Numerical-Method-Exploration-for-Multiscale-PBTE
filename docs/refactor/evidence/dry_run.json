@@ -1,0 +1,24 @@
+{
+  "study_id": "gray_pbte_exploration_v0",
+  "dry_run": true,
+  "formal_blockers": [
+    "study status is not approved",
+    "formal_execution_enabled is not true",
+    "C01: pending_owner or missing approval",
+    "C02: pending_owner or missing approval",
+    "C03: pending_owner or missing approval",
+    "C04: pending_owner or missing approval",
+    "C05: pending_owner or missing approval",
+    "C06: pending_owner or missing approval"
+  ],
+  "execution": "not_started",
+  "prompt_template": "studies/gray_exploration/prompts/explore.md",
+  "exposure": {
+    "knowledge": "requires C06",
+    "editable_paths": "requires C02/C06",
+    "budget": "requires C06",
+    "evaluation": "requires C03/C04",
+    "confirmation_inputs": "withheld",
+    "reference_answers": "withheld"
+  }
+}

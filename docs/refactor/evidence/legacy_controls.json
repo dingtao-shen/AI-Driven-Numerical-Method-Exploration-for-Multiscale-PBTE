@@ -1,0 +1,103 @@
+{
+  "purpose": "compatibility_controls_only",
+  "source_revision": "dffff2319b290860b5c4a87509428595bce4d2b0",
+  "protocol_id": "legacy_t01_v0_3_2",
+  "not_new_kn_domain": true,
+  "case": "F1_1e-2",
+  "rows": [
+    {
+      "candidate": "oracle",
+      "case": "F1_1e-2",
+      "gate": true,
+      "iterations": 228,
+      "converged": true,
+      "transport_residual": 2.7669659819433356e-15,
+      "field_gap_worst": 0.0,
+      "error": null,
+      "processes": [
+        {
+          "started_at": "2026-09-20T20:56:54.668306+00:00",
+          "command": [
+            "/home/dtshen/miniconda3/envs/dev/bin/python",
+            "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/exploration/worker.py",
+            "candidate",
+            "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/runs/phase0-legacy-controls/trusted/t01-square/verifier/run_agent_case.py",
+            "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/runs/phase0-legacy-controls/oracle/candidate_work",
+            "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/runs/phase0-legacy-controls/oracle/F1_1e-2.yaml",
+            "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/runs/phase0-legacy-controls/oracle/F1_1e-2.npz",
+            "krylov"
+          ],
+          "timeout_s": 180,
+          "returncode": 0,
+          "termination": "completed",
+          "finished_at": "2026-09-20T20:57:05.778165+00:00"
+        },
+        {
+          "started_at": "2026-09-20T20:57:05.825384+00:00",
+          "command": [
+            "/home/dtshen/miniconda3/envs/dev/bin/python",
+            "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/exploration/worker.py",
+            "evaluate",
+            "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/runs/phase0-legacy-controls/trusted/t01-square/verifier/evaluate.py",
+            "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/runs/phase0-legacy-controls/trusted/t01-square/verifier/pristine",
+            "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/runs/phase0-legacy-controls/oracle/F1_1e-2.yaml",
+            "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/runs/phase0-legacy-controls/oracle/F1_1e-2.npz",
+            "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/runs/phase0-legacy-controls/trusted/t01-square/reference/F1_1e-2.npz"
+          ],
+          "timeout_s": 180,
+          "returncode": 0,
+          "termination": "completed",
+          "finished_at": "2026-09-20T20:57:15.645132+00:00"
+        }
+      ]
+    },
+    {
+      "candidate": "cis",
+      "case": "F1_1e-2",
+      "gate": false,
+      "iterations": 6000,
+      "converged": false,
+      "transport_residual": 9.32252551323414e-06,
+      "field_gap_worst": 0.015909538346062593,
+      "error": null,
+      "processes": [
+        {
+          "started_at": "2026-09-20T20:57:15.653287+00:00",
+          "command": [
+            "/home/dtshen/miniconda3/envs/dev/bin/python",
+            "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/exploration/worker.py",
+            "candidate",
+            "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/runs/phase0-legacy-controls/trusted/t01-square/verifier/run_agent_case.py",
+            "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/runs/phase0-legacy-controls/cis/candidate_work",
+            "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/runs/phase0-legacy-controls/cis/F1_1e-2.yaml",
+            "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/runs/phase0-legacy-controls/cis/F1_1e-2.npz",
+            "cis"
+          ],
+          "timeout_s": 180,
+          "returncode": 0,
+          "termination": "completed",
+          "finished_at": "2026-09-20T20:58:22.158669+00:00"
+        },
+        {
+          "started_at": "2026-09-20T20:58:22.169808+00:00",
+          "command": [
+            "/home/dtshen/miniconda3/envs/dev/bin/python",
+            "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/exploration/worker.py",
+            "evaluate",
+            "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/runs/phase0-legacy-controls/trusted/t01-square/verifier/evaluate.py",
+            "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/runs/phase0-legacy-controls/trusted/t01-square/verifier/pristine",
+            "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/runs/phase0-legacy-controls/cis/F1_1e-2.yaml",
+            "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/runs/phase0-legacy-controls/cis/F1_1e-2.npz",
+            "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/runs/phase0-legacy-controls/trusted/t01-square/reference/F1_1e-2.npz"
+          ],
+          "timeout_s": 180,
+          "returncode": 0,
+          "termination": "completed",
+          "finished_at": "2026-09-20T20:58:32.583857+00:00"
+        }
+      ]
+    }
+  ],
+  "outputs": "/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/runs/phase0-legacy-controls",
+  "note": "Single stiff-cell oracle/null control; not full 15-cell validation or new CIS calibration."
+}

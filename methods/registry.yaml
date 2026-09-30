@@ -1,0 +1,193 @@
+schema_version: 1
+methods:
+- id: cis
+  implementation_kind: builtin
+  source: solver-python/pybte
+  source_revision: dffff2319b290860b5c4a87509428595bce4d2b0
+  entrypoint: pybte.Case -> pybte.Solver -> RunRecord
+  config:
+    method: source
+    accflag: 0
+  configuration_scope: existing implementation example; not a new study default
+  verification:
+    legacy: existing_regression_suite
+    new_gray_protocol: not_evaluated
+    non_gray_transfer: not_evaluated
+  gray_assumptions:
+  - steady linear gray Callaway model
+  - current DG/angular state layout
+  limits: See solver-python/docs/LIMITATIONS.md and KRYLOV.md; no new-domain robustness
+    claim
+- id: gsis
+  implementation_kind: builtin
+  source: solver-python/pybte
+  source_revision: dffff2319b290860b5c4a87509428595bce4d2b0
+  entrypoint: pybte.Case -> pybte.Solver -> RunRecord
+  config:
+    method: source
+    accflag: 1
+  configuration_scope: existing implementation example; not a new study default
+  verification:
+    legacy: existing_regression_suite_with_fixed_point_observations
+    new_gray_protocol: not_evaluated
+    non_gray_transfer: not_evaluated
+  gray_assumptions:
+  - steady linear gray Callaway model
+  - current DG/angular state layout
+  limits: See solver-python/docs/LIMITATIONS.md and KRYLOV.md; no new-domain robustness
+    claim
+- id: krylov
+  implementation_kind: builtin
+  source: solver-python/pybte
+  source_revision: dffff2319b290860b5c4a87509428595bce4d2b0
+  entrypoint: pybte.Case -> pybte.Solver -> RunRecord
+  config:
+    method: krylov
+  configuration_scope: existing implementation example; not a new study default
+  verification:
+    legacy: existing_regression_suite
+    new_gray_protocol: not_evaluated
+    non_gray_transfer: not_evaluated
+  gray_assumptions:
+  - steady linear gray Callaway model
+  - current DG/angular state layout
+  limits: See solver-python/docs/LIMITATIONS.md and KRYLOV.md; no new-domain robustness
+    claim
+- id: gsis_defect
+  implementation_kind: builtin
+  source: solver-python/pybte
+  source_revision: dffff2319b290860b5c4a87509428595bce4d2b0
+  entrypoint: pybte.Case -> pybte.Solver -> RunRecord
+  config:
+    accflag: 1
+    defect_omega: 1.0
+    defect_every: 0
+    defect_anderson: 8
+  configuration_scope: existing implementation example; not a new study default
+  verification:
+    legacy: experimental
+    new_gray_protocol: not_evaluated
+    non_gray_transfer: not_evaluated
+  gray_assumptions:
+  - steady linear gray Callaway model
+  - current DG/angular state layout
+  limits: See solver-python/docs/LIMITATIONS.md and KRYLOV.md; no new-domain robustness
+    claim
+- id: krylov_macro_preconditioner
+  implementation_kind: builtin
+  source: solver-python/pybte
+  source_revision: dffff2319b290860b5c4a87509428595bce4d2b0
+  entrypoint: pybte.Case -> pybte.Solver -> RunRecord
+  config:
+    method: krylov
+    krylov_precond: true
+  configuration_scope: existing implementation example; not a new study default
+  verification:
+    legacy: experimental
+    new_gray_protocol: not_evaluated
+    non_gray_transfer: not_evaluated
+  gray_assumptions:
+  - steady linear gray Callaway model
+  - current DG/angular state layout
+  limits: See solver-python/docs/LIMITATIONS.md and KRYLOV.md; no new-domain robustness
+    claim
+- id: legacy_f3_trial_01
+  implementation_kind: archived_tree
+  archive: experiments/results/t01-square-F3/trial_01_environment.tar.gz
+  source_revision: dffff2319b290860b5c4a87509428595bce4d2b0
+  archive_sha256: 829100457908c54a1676e645e437e3ffb229514cdbc85e2e5d033f2050503b2e
+  method_family_reported: moment_block_preconditioned_gmres
+  description_source: experiments/results/t01-square-F3/NOTES.md
+  entrypoint: 'environment/pybte/driver.py: Solver.run (through frozen run_agent_case.py)'
+  numerical_adapter_status: pending_verification
+  verification:
+    legacy: reported_pass_legacy_t01_v0_3_2
+    archive_structure: checked_no_links_or_traversal
+    new_gray_protocol: not_evaluated
+    non_gray_transfer: not_evaluated
+  gray_assumptions:
+  - linear gray source/moment coupling
+  - gray angular projection or moment blocks
+  - periodic trace and reflecting emission in extended state/correction
+  limits: Original final tree only; no component refactor or numerical replay in this
+    round
+- id: legacy_f3_trial_02
+  implementation_kind: archived_tree
+  archive: experiments/results/t01-square-F3/trial_02_environment.tar.gz
+  source_revision: dffff2319b290860b5c4a87509428595bce4d2b0
+  archive_sha256: 41f856e161618c91ef4019748a6401915e56c4986819ace253ca10c720f2d762
+  method_family_reported: low_order_moment_preconditioned_gmres
+  description_source: experiments/results/t01-square-F3/NOTES.md
+  entrypoint: 'environment/pybte/driver.py: Solver.run (through frozen run_agent_case.py)'
+  numerical_adapter_status: pending_verification
+  verification:
+    legacy: reported_pass_legacy_t01_v0_3_2
+    archive_structure: checked_no_links_or_traversal
+    new_gray_protocol: not_evaluated
+    non_gray_transfer: not_evaluated
+  gray_assumptions:
+  - linear gray source/moment coupling
+  - gray angular projection or moment blocks
+  - periodic trace and reflecting emission in extended state/correction
+  limits: Original final tree only; no component refactor or numerical replay in this
+    round
+- id: legacy_f3_trial_03
+  implementation_kind: archived_tree
+  archive: experiments/results/t01-square-F3/trial_03_environment.tar.gz
+  source_revision: dffff2319b290860b5c4a87509428595bce4d2b0
+  archive_sha256: cf8e6f607a2159d2275f09515e7a4158ce624dfc9fadfa3132900fb0cb0ccfdf
+  method_family_reported: non_krylov_coarse_transport_synthetic_correction
+  description_source: experiments/results/t01-square-F3/NOTES.md
+  entrypoint: 'environment/pybte/driver.py: Solver.run (through frozen run_agent_case.py)'
+  numerical_adapter_status: pending_verification
+  verification:
+    legacy: reported_pass_legacy_t01_v0_3_2
+    archive_structure: checked_no_links_or_traversal
+    new_gray_protocol: not_evaluated
+    non_gray_transfer: not_evaluated
+  gray_assumptions:
+  - linear gray source/moment coupling
+  - gray angular projection or moment blocks
+  - periodic trace and reflecting emission in extended state/correction
+  limits: Original final tree only; no component refactor or numerical replay in this
+    round
+- id: legacy_f3_trial_04
+  implementation_kind: archived_tree
+  archive: experiments/results/t01-square-F3/trial_04_environment.tar.gz
+  source_revision: dffff2319b290860b5c4a87509428595bce4d2b0
+  archive_sha256: 356a77f92d011b4d22097b879a1fae232534c446e42421cba03d83a45c0c4bbd
+  method_family_reported: angular_polynomial_transport_preconditioned_gmres
+  description_source: experiments/results/t01-square-F3/NOTES.md
+  entrypoint: 'environment/pybte/driver.py: Solver.run (through frozen run_agent_case.py)'
+  numerical_adapter_status: pending_verification
+  verification:
+    legacy: reported_pass_legacy_t01_v0_3_2
+    archive_structure: checked_no_links_or_traversal
+    new_gray_protocol: not_evaluated
+    non_gray_transfer: not_evaluated
+  gray_assumptions:
+  - linear gray source/moment coupling
+  - gray angular projection or moment blocks
+  - periodic trace and reflecting emission in extended state/correction
+  limits: Original final tree only; no component refactor or numerical replay in this
+    round
+- id: legacy_f3_trial_05
+  implementation_kind: archived_tree
+  archive: experiments/results/t01-square-F3/trial_05_environment.tar.gz
+  source_revision: dffff2319b290860b5c4a87509428595bce4d2b0
+  archive_sha256: 53df5d710bea5ee864ecefca5e5bec8f4373cc3dccc376d97fe2bf887b0d60f6
+  method_family_reported: coarse_angle_transport_right_preconditioned_gmres
+  description_source: experiments/results/t01-square-F3/NOTES.md
+  entrypoint: 'environment/pybte/driver.py: Solver.run (through frozen run_agent_case.py)'
+  numerical_adapter_status: pending_verification
+  verification:
+    legacy: reported_pass_legacy_t01_v0_3_2
+    archive_structure: checked_no_links_or_traversal
+    new_gray_protocol: not_evaluated
+    non_gray_transfer: not_evaluated
+  gray_assumptions:
+  - linear gray source/moment coupling
+  - gray angular projection or moment blocks
+  - periodic trace and reflecting emission in extended state/correction
+  limits: Original final tree only; no component refactor or numerical replay in this
+    round

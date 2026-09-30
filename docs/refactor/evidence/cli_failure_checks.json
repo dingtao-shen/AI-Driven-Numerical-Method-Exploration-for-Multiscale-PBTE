@@ -1,0 +1,64 @@
+[
+  {
+    "check": "formal_guard",
+    "command": [
+      "/home/dtshen/miniconda3/envs/dev/bin/python",
+      "-m",
+      "exploration",
+      "run"
+    ],
+    "returncode": 2,
+    "expected": 2,
+    "stdout": "",
+    "stderr": "exploration: Formal execution blocked before solve/provider: study status is not approved; formal_execution_enabled is not true; C01: pending_owner or missing approval; C02: pending_owner or missing approval; C03: pending_owner or missing approval; C04: pending_owner or missing approval; C05: pending_owner or missing approval; C06: pending_owner or missing approval\n"
+  },
+  {
+    "check": "existing_run_guard",
+    "command": [
+      "/home/dtshen/miniconda3/envs/dev/bin/python",
+      "-m",
+      "exploration",
+      "smoke",
+      "--out",
+      "runs/phase0-smoke-cis"
+    ],
+    "returncode": 2,
+    "expected": 2,
+    "stdout": "",
+    "stderr": "exploration: [Errno 17] File exists: '/home/dtshen/workspace/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE/runs/phase0-smoke-cis'\n"
+  },
+  {
+    "check": "mock_timeout",
+    "command": [
+      "/home/dtshen/miniconda3/envs/dev/bin/python",
+      "-m",
+      "exploration",
+      "mock",
+      "--scenario",
+      "timeout",
+      "--out",
+      "runs/phase0-mock-timeout"
+    ],
+    "returncode": 1,
+    "expected": 1,
+    "stdout": "{\n  \"schema_version\": 1,\n  \"run_id\": \"phase0-mock-timeout\",\n  \"started_at\": \"2026-09-20T21:00:13.035763+00:00\",\n  \"purpose\": \"compatibility_smoke\",\n  \"protocol_id\": \"legacy_t01_v0_3_2\",\n  \"counts_as_new_research_evidence\": false,\n  \"scientific_claim_status\": \"not_evaluated_under_new_contracts\",\n  \"environment\": {\n    \"python\": \"3.11.13 (main, Jun  5 2025, 13:12:00) [GCC 11.2.0]\",\n    \"executable\": \"/home/dtshen/miniconda3/envs/dev/bin/python\",\n    \"dependencies\": {\n      \"numpy\": \"2.0.0\",\n      \"scipy\": \"1.16.0\",\n      \"PyYAML\": \"6.0.3\",\n      \"numba\": \"0.61.2\",\n      \"pytest\": \"9.0.3\"\n    },\n    \"platform\": \"Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.39\",\n    \"processor\": \"x86_64\",\n    \"cpu_count\": 24,\n    \"execution_threads\": {\n      \"OMP_NUM_THREADS\": \"1\",\n      \"MKL_NUM_THREADS\": \"1\",\n      \"OPENBLAS_NUM_THREADS\": \"1\",\n      \"NUMBA_NUM_THREADS\": \"1\",\n      \"PYTHONHASHSEED\": \"0\"\n    },\n    \"jit\": \"numba when available; original same-family warm-up\",\n    \"cache_policy\": \"per-cell cache-free candidate; separate pristine cache\",\n    \"os_isolation\": \"not_validated\",\n    \"execution_policy\": \"reviewed builtins only\"\n  },\n  \"provider\": \"mock\",\n  \"new_protocol_evaluation\": {\n    \"correctness_passed\": null,\n    \"aggregate_score\": null,\n    \"blocked_by\": [\n      \"C01\",\n      \"C02\",\n      \"C03\",\n      \"C04\",\n      \"C05\",\n      \"C06\"\n    ]\n  },\n  \"evaluations\": [],\n  \"cost_usd\": null,\n  \"export_status\": \"not_exported\",\n  \"termination\": \"provider_timeout\",\n  \"legacy_gate\": null,\n  \"finished_at\": \"2026-09-20T21:00:13.039448+00:00\"\n}\n",
+    "stderr": ""
+  },
+  {
+    "check": "mock_error",
+    "command": [
+      "/home/dtshen/miniconda3/envs/dev/bin/python",
+      "-m",
+      "exploration",
+      "mock",
+      "--scenario",
+      "error",
+      "--out",
+      "runs/phase0-mock-error"
+    ],
+    "returncode": 1,
+    "expected": 1,
+    "stdout": "{\n  \"schema_version\": 1,\n  \"run_id\": \"phase0-mock-error\",\n  \"started_at\": \"2026-09-20T21:00:13.098215+00:00\",\n  \"purpose\": \"compatibility_smoke\",\n  \"protocol_id\": \"legacy_t01_v0_3_2\",\n  \"counts_as_new_research_evidence\": false,\n  \"scientific_claim_status\": \"not_evaluated_under_new_contracts\",\n  \"environment\": {\n    \"python\": \"3.11.13 (main, Jun  5 2025, 13:12:00) [GCC 11.2.0]\",\n    \"executable\": \"/home/dtshen/miniconda3/envs/dev/bin/python\",\n    \"dependencies\": {\n      \"numpy\": \"2.0.0\",\n      \"scipy\": \"1.16.0\",\n      \"PyYAML\": \"6.0.3\",\n      \"numba\": \"0.61.2\",\n      \"pytest\": \"9.0.3\"\n    },\n    \"platform\": \"Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.39\",\n    \"processor\": \"x86_64\",\n    \"cpu_count\": 24,\n    \"execution_threads\": {\n      \"OMP_NUM_THREADS\": \"1\",\n      \"MKL_NUM_THREADS\": \"1\",\n      \"OPENBLAS_NUM_THREADS\": \"1\",\n      \"NUMBA_NUM_THREADS\": \"1\",\n      \"PYTHONHASHSEED\": \"0\"\n    },\n    \"jit\": \"numba when available; original same-family warm-up\",\n    \"cache_policy\": \"per-cell cache-free candidate; separate pristine cache\",\n    \"os_isolation\": \"not_validated\",\n    \"execution_policy\": \"reviewed builtins only\"\n  },\n  \"provider\": \"mock\",\n  \"new_protocol_evaluation\": {\n    \"correctness_passed\": null,\n    \"aggregate_score\": null,\n    \"blocked_by\": [\n      \"C01\",\n      \"C02\",\n      \"C03\",\n      \"C04\",\n      \"C05\",\n      \"C06\"\n    ]\n  },\n  \"evaluations\": [],\n  \"cost_usd\": null,\n  \"export_status\": \"not_exported\",\n  \"termination\": \"provider_execution_error\",\n  \"legacy_gate\": null,\n  \"finished_at\": \"2026-09-20T21:00:13.102012+00:00\"\n}\n",
+    "stderr": ""
+  }
+]

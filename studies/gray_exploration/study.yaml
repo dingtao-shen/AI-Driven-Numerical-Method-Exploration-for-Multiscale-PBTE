@@ -1,0 +1,35 @@
+schema_version: 1
+study_id: gray_pbte_exploration_v0
+phase: gray
+status: draft
+contracts:
+  C01:
+    status: pending_owner
+    value: null
+    approval: null
+  C02:
+    status: pending_owner
+    value: null
+    approval: null
+  C03:
+    status: pending_owner
+    value: null
+    approval: null
+  C04:
+    status: pending_owner
+    value: null
+    approval: null
+  C05:
+    status: pending_owner
+    value: null
+    approval: null
+  C06:
+    status: pending_owner
+    value: null
+    approval: null
+formal_execution_enabled: false
+non_gray_contract:
+  id: C07
+  status: pending_owner
+  value: null
+  required_for_gray: false

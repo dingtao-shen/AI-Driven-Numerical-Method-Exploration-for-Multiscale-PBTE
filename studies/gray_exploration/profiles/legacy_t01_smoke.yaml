@@ -1,0 +1,15 @@
+schema_version: 1
+profile_id: legacy_t01_smoke
+purpose: compatibility_smoke
+protocol_id: legacy_t01_v0_3_2
+source_revision: dffff2319b290860b5c4a87509428595bce4d2b0
+verifier_revision: ac1d315f91dfce394defceb8e5281406397fe496
+counts_as_new_research_evidence: false
+live_agent_enabled: false
+baseline_manifest_sha256: 95bc1818db9f0dd0812b7775cfad36daab2a09cf13581943b5a25a1391ee63b1
+cases:
+- F1_1_1
+- F2_1_1
+- F3_1_1
+note: Engineering subset only; not an approved Kn domain. Gates and timing from frozen
+  cells.json/checks.py.

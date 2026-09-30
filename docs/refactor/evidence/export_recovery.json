@@ -1,0 +1,23 @@
+[
+  {
+    "archive": "docs/refactor/evidence/smoke_cis.tar.gz",
+    "sha256": "cf4a341450976a04f721ccd4b8dbb676d9f86646f0747a00ad0f2aada1fe07bd",
+    "files_verified": 300,
+    "restore_test": "passed",
+    "source_run": "phase0-smoke-cis"
+  },
+  {
+    "archive": "docs/refactor/evidence/smoke_krylov.tar.gz",
+    "sha256": "f9f72c21a591fc1669763911e8981cba150552ca7d6f1410412ad9786a53b055",
+    "files_verified": 300,
+    "restore_test": "passed",
+    "source_run": "phase0-smoke-krylov"
+  },
+  {
+    "archive": "docs/refactor/evidence/mock_success.tar.gz",
+    "sha256": "8877793e2df05075ba2e972151642b84e04637c20145972176076a93c82174d8",
+    "files_verified": 301,
+    "restore_test": "passed",
+    "source_run": "phase0-mock-success"
+  }
+]

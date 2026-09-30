@@ -1,0 +1,43 @@
+{
+  "phase0": "engineering_delivered_with_partial_core_validation",
+  "source_revision": "dffff2319b290860b5c4a87509428595bce4d2b0",
+  "branch": "refactor/phase0-exploration",
+  "solver_baseline": {
+    "passed": 121,
+    "deselected_slow": 40,
+    "log": "solver_baseline_non_slow.log"
+  },
+  "solver_after": {
+    "passed": 121,
+    "deselected_slow": 40,
+    "log": "solver_after_non_slow.log"
+  },
+  "full_solver_suite": {
+    "status": "not_completed",
+    "interrupted_after_s": 2589.29,
+    "reason": "First slow test still computing after 43 minutes; retained unmodified tests and ran non-slow plus targeted real numerical controls."
+  },
+  "exploration_tests": {
+    "passed": 44,
+    "log": "exploration_acceptance.log"
+  },
+  "numerical_pairs": 6,
+  "numerical_outputs": "bitwise_identical_including_npz; independent_residuals_equal",
+  "legacy_stiff_controls": {
+    "oracle": "passed_228_iterations",
+    "cis": "expected_failure_at_6000_iterations"
+  },
+  "protected_files_unchanged": 378,
+  "export_restore": "passed_300_300_301_files",
+  "document_links": {
+    "checked": 55,
+    "broken": 0
+  },
+  "formal_contracts": "C01-C07_pending_owner",
+  "formal_engine": "not_implemented_in_phase0",
+  "live_rollouts": "not_run",
+  "docker_execution": "not_run",
+  "os_sandbox": "not_validated",
+  "non_gray": "not_implemented_in_this_round",
+  "new_scientific_claims": "not_claimed"
+}

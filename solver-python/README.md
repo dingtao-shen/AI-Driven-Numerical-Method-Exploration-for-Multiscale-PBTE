@@ -1,12 +1,18 @@
+> Numerical backend of AI-Driven Numerical Method Exploration for Multiscale PBTE.
+> Historical measurements are retained below; current scope and test evidence are in
+> [project status](../docs/STATUS.md). Research contracts remain pending.
+
 # pybte
 
 Steady 2D2V gray linear **Callaway phonon Boltzmann** solver: nodal
 discontinuous Galerkin in space, discrete ordinates in angle, with two
-iteration schemes —
+iteration paths —
 
 * **CIS** — conventional source iteration (`scheme.accflag: 0`)
 * **GSIS** — general synthetic iterative scheme, HDG macroscopic acceleration
   (`scheme.accflag: 1`)
+* **Krylov** — GMRES on the source-iteration system, including reflecting and periodic state
+  (`scheme.method: krylov`)
 
 Ported from a Fortran research solver (`ACC_2D2V_LinearCallawayModel`) and
 verified against it before that reference was retired; see `VALIDATION.md`.
@@ -61,6 +67,9 @@ Laplace solution carried in `pybte.analytic`. See `docs/EQUATIONS.md` for the
 discretisation.
 
 ## Why GSIS exists
+
+Historical measurements below concern the shipped implementation and sampled cases, not a
+new-domain robustness claim. Current engineering test results are in ../docs/STATUS.md.
 
 Source iteration regenerates almost all of its own source when the medium is
 optically thick, so its spectral radius approaches 1 as `tau_R → 0`. Measured
@@ -123,19 +132,16 @@ them now that the reference is gone.
 
 Both are documented in full in **`docs/LIMITATIONS.md`**, along with two more.
 The accelerated path that keeps CIS's fixed point is `scheme.method: krylov`
-(`docs/KRYLOV.md`); `docs/DEFECT_CORRECTION.md` is an earlier experimental repair.
+(`docs/KRYLOV.md`); `docs/DEFECT_CORRECTION.md` documents an earlier experimental correction.
 
-**1. GSIS does not converge to the same discrete fixed point as CIS.** Both
-schemes reach `residual_iterate < 1e-13`, but the *true* transport residual is
-4.3e-14 for CIS and 3.2e-03 for GSIS: CIS is at the discrete kinetic fixed
-point and GSIS is not. Their converged fields differ by 1.7e-2 at
-`tau_R = 1e-1` — in the Fortran as well as here. The cause is structural: the
-macroscopic system is discretised by HDG while the kinetic one is upwind DG,
-and the gap does **not** close under mesh or order refinement (only as
-`tau_R → 0`). Anything built on this solver must grade against the true
-residual and the analytic limit rather than against the other scheme's answer.
-`tools/fixed_point_study.py` reproduces the measurement; `scheme.defect_omega`
-is an off-by-default repair (`docs/DEFECT_CORRECTION.md`).
+**1. The current implementation has recorded CIS/GSIS fixed-point differences.**
+The retained measurements include true transport residuals 4.3e-14 (CIS) and
+3.2e-03 (GSIS), and a field gap 1.7e-2 at `tau_R = 1e-1`.
+These observations do not establish a universal property of GSIS or rule out
+an implementation issue. The causal interpretation and discrete compatibility
+need further verification. `tools/fixed_point_study.py` and its JSON data are
+preserved; no numerical formula was changed in phase0.
+`scheme.defect_omega` remains an experimental option (`docs/DEFECT_CORRECTION.md`).
 
 **2. Do not trust a CIS residual.** The stopping criterion measures the *step*
 between iterates, not the *error*, and source iteration's contraction factor

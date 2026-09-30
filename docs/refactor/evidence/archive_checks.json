@@ -1,0 +1,42 @@
+[
+  {
+    "archive": "experiments/results/t01-square-F3/trial_01_environment.tar.gz",
+    "sha256": "829100457908c54a1676e645e437e3ffb229514cdbc85e2e5d033f2050503b2e",
+    "member_count": 71,
+    "entrypoint_present": true,
+    "safe_structure": true,
+    "numerical_replay": "not_run"
+  },
+  {
+    "archive": "experiments/results/t01-square-F3/trial_02_environment.tar.gz",
+    "sha256": "41f856e161618c91ef4019748a6401915e56c4986819ace253ca10c720f2d762",
+    "member_count": 71,
+    "entrypoint_present": true,
+    "safe_structure": true,
+    "numerical_replay": "not_run"
+  },
+  {
+    "archive": "experiments/results/t01-square-F3/trial_03_environment.tar.gz",
+    "sha256": "cf8e6f607a2159d2275f09515e7a4158ce624dfc9fadfa3132900fb0cb0ccfdf",
+    "member_count": 71,
+    "entrypoint_present": true,
+    "safe_structure": true,
+    "numerical_replay": "not_run"
+  },
+  {
+    "archive": "experiments/results/t01-square-F3/trial_04_environment.tar.gz",
+    "sha256": "356a77f92d011b4d22097b879a1fae232534c446e42421cba03d83a45c0c4bbd",
+    "member_count": 71,
+    "entrypoint_present": true,
+    "safe_structure": true,
+    "numerical_replay": "not_run"
+  },
+  {
+    "archive": "experiments/results/t01-square-F3/trial_05_environment.tar.gz",
+    "sha256": "53df5d710bea5ee864ecefca5e5bec8f4373cc3dccc376d97fe2bf887b0d60f6",
+    "member_count": 71,
+    "entrypoint_present": true,
+    "safe_structure": true,
+    "numerical_replay": "not_run"
+  }
+]

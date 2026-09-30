@@ -1,0 +1,22 @@
+{
+  "python": "3.11.13 (main, Jun  5 2025, 13:12:00) [GCC 11.2.0]",
+  "executable": "/home/dtshen/miniconda3/envs/dev/bin/python",
+  "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "machine": "x86_64",
+  "processor": "x86_64",
+  "dependencies": {
+    "numpy": "2.0.0",
+    "scipy": "1.16.0",
+    "yaml": "6.0.3",
+    "pytest": "9.0.3",
+    "numba": "0.61.2"
+  },
+  "threads_inherited": {
+    "OMP_NUM_THREADS": null,
+    "MKL_NUM_THREADS": null,
+    "OPENBLAS_NUM_THREADS": null,
+    "NUMBA_NUM_THREADS": null
+  },
+  "test_threads": 1,
+  "numba_enabled": true
+}

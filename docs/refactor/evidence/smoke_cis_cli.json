@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "run_id": "phase0-smoke-cis",
+  "started_at": "2026-09-20T20:51:29.872347+00:00",
+  "purpose": "compatibility_smoke",
+  "protocol_id": "legacy_t01_v0_3_2",
+  "counts_as_new_research_evidence": false,
+  "scientific_claim_status": "not_evaluated_under_new_contracts",
+  "environment": {
+    "python": "3.11.13 (main, Jun  5 2025, 13:12:00) [GCC 11.2.0]",
+    "executable": "/home/dtshen/miniconda3/envs/dev/bin/python",
+    "dependencies": {
+      "numpy": "2.0.0",
+      "scipy": "1.16.0",
+      "PyYAML": "6.0.3",
+      "numba": "0.61.2",
+      "pytest": "9.0.3"
+    },
+    "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "processor": "x86_64",
+    "cpu_count": 24,
+    "execution_threads": {
+      "OMP_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1",
+      "NUMBA_NUM_THREADS": "1",
+      "PYTHONHASHSEED": "0"
+    },
+    "jit": "numba when available; original same-family warm-up",
+    "cache_policy": "per-cell cache-free candidate; separate pristine cache",
+    "os_isolation": "not_validated",
+    "execution_policy": "reviewed builtins only"
+  },
+  "provider": "builtin",
+  "new_protocol_evaluation": {
+    "correctness_passed": null,
+    "aggregate_score": null,
+    "blocked_by": [
+      "C01",
+      "C02",
+      "C03",
+      "C04",
+      "C05",
+      "C06"
+    ]
+  },
+  "evaluations": [
+    {
+      "eval_id": "eval_001_F1_1_1",
+      "path": "evaluations/eval_001_F1_1_1",
+      "case": "F1_1_1",
+      "termination": "passed",
+      "legacy_gate": true
+    },
+    {
+      "eval_id": "eval_002_F2_1_1",
+      "path": "evaluations/eval_002_F2_1_1",
+      "case": "F2_1_1",
+      "termination": "passed",
+      "legacy_gate": true
+    },
+    {
+      "eval_id": "eval_003_F3_1_1",
+      "path": "evaluations/eval_003_F3_1_1",
+      "case": "F3_1_1",
+      "termination": "passed",
+      "legacy_gate": true
+    }
+  ],
+  "cost_usd": null,
+  "export_status": "not_exported",
+  "candidate": {
+    "schema_version": 1,
+    "candidate_id": "candidate_9046596c3de97170fec0aebdc058c5c017a01745a522f82f49e7272de1fa1da7",
+    "parent_method": "cis",
+    "parent_candidate": null,
+    "source_revision": "dffff2319b290860b5c4a87509428595bce4d2b0",
+    "files": {
+      "pybte/__init__.py": "4f13d1081b61b0fb11f61b5332792a6cc4c5021fbceb248a2e7a0a96e78ac231",
+      "pybte/__main__.py": "a816f7b428e8a4e83b79f1e9ecb1182c2a5321bf39d66318e45a64fb68a79812",
+      "pybte/_kernels.py": "19b07ccdb53b0101c7a358640d0037b8d61ecb65530dd24931dc2b356afda71e",
+      "pybte/_numba.py": "f29cacf8bbc34a77d920949c7748d1ebe8f6460acfea888e8872e3cc8c467e6a",
+      "pybte/acceleration/__init__.py": "e20930f9f7de55da4ab67c5c5d87e38e0bb5b508165f7c358230e09b521c0906",
+      "pybte/acceleration/assembly.py": "064c2b55cb0c69583743974848696c7416d46617cc0bd1e7f89e64271aebf5ea",
+      "pybte/acceleration/correction.py": "5135a34b55bd11488353be62d8847ca2b69f0ebb2b730365890f4a8e273ab4eb",
+      "pybte/acceleration/global_solve.py": "b87a75ce866314ccc925de99ed5640b2bb2be18f2e707ddd75c41bcb071b0fbb",
+      "pybte/acceleration/hot_source.py": "ca6bacb55e9a05bf8fcd670191e071b3ffe471b4bea510090fb2fabeb8af061d",
+      "pybte/acceleration/local_solve.py": "33c500a8821565a06fdacfca338c36fde1afe46fa29b7d4395f8a5a5e74a2aa3",
+      "pybte/analytic.py": "6e2bebf6d027344f9d894c7d21d883112ea1e6bdaac5e4cfba29e8d7d7bd512e",
+      "pybte/basis.py": "8a38ac5a63ef3c955822059fa86029a475d8581321bdea8ff6df036c38262efe",
+      "pybte/bc.py": "b0bce2186548e2037fa685c8763ed9bc14807c26f946f9b5f75cd448dca8f3f8",
+      "pybte/config.py": "c927d8a3410d863c56edb526f2c0963d59995eb82f10f4ca701b1e3fca072266",
+      "pybte/constants.py": "13a74eb0af4152067f8015a9104223f9ac61e167f96050e127c66ae42b9d9881",
+      "pybte/driver.py": "4a98c9888f0fe811f57ca23b0125558f5481d2392e487e87bee8c6ca06363e68",
+      "pybte/integration.py": "41654dcc403976f1ff0c45262cd37c3fbe335a9ac5e4ef7a29d06991a3675872",
+      "pybte/io_output.py": "0dde5197be1e1df6b786593a529d8e05e9c1811ec4b67e7c59e61098e7e301b1",
+      "pybte/krylov.py": "c07d9f6392686895acf799503dec74deb310180742e81be06d961ee2d978e86b",
+      "pybte/mesh/__init__.py": "e363346866bbd5e42585c8a956c6336e9ae29166ea6b00375b2572deeea291e5",
+      "pybte/mesh/geometry.py": "d8da42f661d3e87dbdc59ffa97f05c69a4d8310224d232ac2be3e7d25b8bfbf5",
+      "pybte/mesh/gmsh_reader.py": "a7251ec9184cc0dba0c574ea6f80b0545d12b028f6cc2a69d86cd3c90752e14c",
+      "pybte/mesh/topology.py": "b01064af459f6c68304a3a866e8f48f45d08d73f2d2305aed8d2570349e7dd8b",
+      "pybte/moments.py": "7e3379a1deb15c4e08ad8e926bc9e6fef19090305e086a13dd261635db2ffc58",
+      "pybte/ordering.py": "a9326c0784f85e34d5cc052b02201815a847ccdb9d5c504d79003f799434d219",
+      "pybte/quadrature.py": "6bd20d5b52c06b6147736234d004bb4fafd2be65edd72bcf6c9e4ec29be66e79",
+      "pybte/sweep.py": "ece94b7eca427eebd37bf6780d8175c072b56ca561dd06511d325b6cd35cbd23",
+      "pybte/sweep_reference.py": "9ce75414c3e8c5f6c44a75d551b7e9a4e3a811f0370b07759ad22981370dd5c7",
+      "pybte/velocity.py": "78a3233b1bccd899cfa6ec784fc4729e5292233df2e27fdbec214b41c0100727"
+    },
+    "config_sha256": "3f5369d6ca7616e1e7a48738c3d6276cbf42c0d77ac9b85749edabb360f689bb",
+    "snapshot_policy": "allowlisted source; read-only files; hashes checked before and after execution"
+  },
+  "legacy_gate": true,
+  "termination": "completed",
+  "integrity": "candidate, trusted copy and protected repository assets unchanged",
+  "finished_at": "2026-09-20T20:52:25.142234+00:00"
+}

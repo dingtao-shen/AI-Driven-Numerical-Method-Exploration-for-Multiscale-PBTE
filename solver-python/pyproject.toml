@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pybte"
 version = "1.0.0"
-description = "Steady 2D2V gray linear Callaway phonon BTE: nodal DG in space, discrete ordinates in angle, CIS and GSIS iteration"
+description = "Gray Callaway PBTE numerical backend for accelerated-iteration exploration: DG, discrete ordinates, CIS, GSIS and Krylov"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -32,7 +32,7 @@ dev = ["numba>=0.58", "pytest>=7.0"]
 pybte = "pybte.__main__:main"
 
 [project.urls]
-Source = "https://github.com/StiKine-Bench"
+Source = "https://github.com/dingtao-shen/AI-Driven-Numerical-Method-Exploration-for-Multiscale-PBTE"
 
 [tool.setuptools.packages.find]
 include = ["pybte*"]

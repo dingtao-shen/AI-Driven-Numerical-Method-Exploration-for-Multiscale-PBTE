@@ -1,0 +1,6 @@
+F1_1_1 cis {'iterations': 33, 'converged': True, 'mass': 0.24895885634861264, 'transport_residual': 7.24748564879633e-10, 'shapes': {'vdf': [200, 200, 6], 'temp': [200], 'qx': [200], 'qy': [200]}}
+F1_1_1 krylov {'iterations': 21, 'converged': True, 'mass': 0.24895885943679633, 'transport_residual': 3.014700424443046e-16, 'shapes': {'vdf': [200, 200, 6], 'temp': [200], 'qx': [200], 'qy': [200]}}
+F2_1_1 cis {'iterations': 75, 'converged': True, 'mass': 0.49999998161672077, 'transport_residual': 9.728093053322137e-10, 'shapes': {'vdf': [200, 200, 6], 'temp': [200], 'qx': [200], 'qy': [200]}}
+F2_1_1 krylov {'iterations': 23, 'converged': True, 'mass': 0.49999999999598294, 'transport_residual': 7.459339569144198e-16, 'shapes': {'vdf': [200, 200, 6], 'temp': [200], 'qx': [200], 'qy': [200]}}
+F3_1_1 cis {'iterations': 70, 'converged': True, 'mass': 0.4999999851313399, 'transport_residual': 1.613340570426194e-09, 'shapes': {'vdf': [200, 200, 6], 'temp': [200], 'qx': [200], 'qy': [200]}}
+F3_1_1 krylov {'iterations': 27, 'converged': True, 'mass': 0.4999999999961027, 'transport_residual': 1.030301474868524e-15, 'shapes': {'vdf': [200, 200, 6], 'temp': [200], 'qx': [200], 'qy': [200]}}

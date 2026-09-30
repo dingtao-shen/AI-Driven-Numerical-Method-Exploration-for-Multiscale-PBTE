@@ -206,8 +206,18 @@ def main(argv=None) -> int:
 
     task = args.task.resolve()
     prompt = (task / "task.md").read_text()
-    out_dir = args.out or (ROOT / "experiments" / "results" / task.name)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    # Legacy provider only. Frozen evidence is never a writable default.
+    if args.out is None:
+        print("legacy rollout requires an explicit NEW --out directory; live runs are outside phase0", file=sys.stderr)
+        return 2
+    out_dir = args.out.resolve()
+    if out_dir == ROOT or (ROOT in out_dir.parents and out_dir.relative_to(ROOT).parts[0] not in ("runs", "workspaces")):
+        print("rollout outputs must use runs/ or workspaces/, not protected evidence", file=sys.stderr)
+        return 2
+    if out_dir.exists():
+        print("refusing to overwrite an existing rollout directory; use a new run ID", file=sys.stderr)
+        return 2
+    out_dir.mkdir(parents=True, exist_ok=False)
     sandbox_root = args.sandbox_root or Path(tempfile.mkdtemp(prefix="rollout-"))
     if ROOT in sandbox_root.resolve().parents or sandbox_root.resolve() == ROOT:
         print("refusing to put sandboxes inside the repository -- the agent "
@@ -292,7 +302,7 @@ def main(argv=None) -> int:
     scores = [r["score"] for r in rows if r["score"]]
     if len(scores) >= 2:
         print(f"score range {min(scores):.1f}x .. {max(scores):.1f}x -- "
-              "spread across trials/models is the benchmark's signal now, not pass rate")
+              "historical protocol comparison only; not new research evidence")
     return 0
 
 

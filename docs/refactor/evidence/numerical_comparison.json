@@ -1,0 +1,500 @@
+{
+  "F1_1_1_cis": {
+    "fields": {
+      "vdf": {
+        "shape_before": [
+          200,
+          200,
+          6
+        ],
+        "shape_after": [
+          200,
+          200,
+          6
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "temp": {
+        "shape_before": [
+          200
+        ],
+        "shape_after": [
+          200
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "qx": {
+        "shape_before": [
+          200
+        ],
+        "shape_after": [
+          200
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "qy": {
+        "shape_before": [
+          200
+        ],
+        "shape_after": [
+          200
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "residual_history": {
+        "shape_before": [
+          33
+        ],
+        "shape_after": [
+          33
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "mass_history": {
+        "shape_before": [
+          33
+        ],
+        "shape_after": [
+          33
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      }
+    },
+    "iterations_before": 33,
+    "iterations_after": 33,
+    "converged_before": true,
+    "converged_after": true,
+    "independent_residual_after": 7.24748564879633e-10,
+    "legacy_gate": true,
+    "solver_residual_before_wall_refresh": 7.24748564879633e-10,
+    "independent_residual_before": 7.24748564879633e-10,
+    "independent_residual_equal": true,
+    "explanation": null,
+    "baseline_npz_sha256": "c582811044d53f1b0148f07ac208da9682b8541ff42c85514deda87e37c27ecb",
+    "after_npz_sha256": "c582811044d53f1b0148f07ac208da9682b8541ff42c85514deda87e37c27ecb",
+    "byte_identical_npz": true,
+    "durable_archive": "docs/refactor/evidence/smoke_cis.tar.gz",
+    "artifact": "evaluations/eval_001_F1_1_1/F1_1_1.npz"
+  },
+  "F2_1_1_cis": {
+    "fields": {
+      "vdf": {
+        "shape_before": [
+          200,
+          200,
+          6
+        ],
+        "shape_after": [
+          200,
+          200,
+          6
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "temp": {
+        "shape_before": [
+          200
+        ],
+        "shape_after": [
+          200
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "qx": {
+        "shape_before": [
+          200
+        ],
+        "shape_after": [
+          200
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "qy": {
+        "shape_before": [
+          200
+        ],
+        "shape_after": [
+          200
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "residual_history": {
+        "shape_before": [
+          75
+        ],
+        "shape_after": [
+          75
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "mass_history": {
+        "shape_before": [
+          75
+        ],
+        "shape_after": [
+          75
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      }
+    },
+    "iterations_before": 75,
+    "iterations_after": 75,
+    "converged_before": true,
+    "converged_after": true,
+    "independent_residual_after": 1.6002363432536588e-09,
+    "legacy_gate": true,
+    "solver_residual_before_wall_refresh": 9.728093053322137e-10,
+    "independent_residual_before": 1.6002363432536588e-09,
+    "independent_residual_equal": true,
+    "explanation": "Independent evaluator reconstructs reflecting-wall emission from submitted vdf; direct solver diagnostic can retain lagged emission.",
+    "baseline_npz_sha256": "91201b6854e51dc25e401ab8c80df103f3fe93654faf7bfbee6f3d33884ed7f0",
+    "after_npz_sha256": "91201b6854e51dc25e401ab8c80df103f3fe93654faf7bfbee6f3d33884ed7f0",
+    "byte_identical_npz": true,
+    "durable_archive": "docs/refactor/evidence/smoke_cis.tar.gz",
+    "artifact": "evaluations/eval_002_F2_1_1/F2_1_1.npz"
+  },
+  "F3_1_1_cis": {
+    "fields": {
+      "vdf": {
+        "shape_before": [
+          200,
+          200,
+          6
+        ],
+        "shape_after": [
+          200,
+          200,
+          6
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "temp": {
+        "shape_before": [
+          200
+        ],
+        "shape_after": [
+          200
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "qx": {
+        "shape_before": [
+          200
+        ],
+        "shape_after": [
+          200
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "qy": {
+        "shape_before": [
+          200
+        ],
+        "shape_after": [
+          200
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "residual_history": {
+        "shape_before": [
+          70
+        ],
+        "shape_after": [
+          70
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "mass_history": {
+        "shape_before": [
+          70
+        ],
+        "shape_after": [
+          70
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      }
+    },
+    "iterations_before": 70,
+    "iterations_after": 70,
+    "converged_before": true,
+    "converged_after": true,
+    "independent_residual_after": 1.613340570426194e-09,
+    "legacy_gate": true,
+    "solver_residual_before_wall_refresh": 1.613340570426194e-09,
+    "independent_residual_before": 1.613340570426194e-09,
+    "independent_residual_equal": true,
+    "explanation": null,
+    "baseline_npz_sha256": "08324cf611e9577fcc257a2473e073699c202612add653d26b25f2000543b637",
+    "after_npz_sha256": "08324cf611e9577fcc257a2473e073699c202612add653d26b25f2000543b637",
+    "byte_identical_npz": true,
+    "durable_archive": "docs/refactor/evidence/smoke_cis.tar.gz",
+    "artifact": "evaluations/eval_003_F3_1_1/F3_1_1.npz"
+  },
+  "F1_1_1_krylov": {
+    "fields": {
+      "vdf": {
+        "shape_before": [
+          200,
+          200,
+          6
+        ],
+        "shape_after": [
+          200,
+          200,
+          6
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "temp": {
+        "shape_before": [
+          200
+        ],
+        "shape_after": [
+          200
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "qx": {
+        "shape_before": [
+          200
+        ],
+        "shape_after": [
+          200
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "qy": {
+        "shape_before": [
+          200
+        ],
+        "shape_after": [
+          200
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "residual_history": {
+        "shape_before": [
+          21
+        ],
+        "shape_after": [
+          21
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "mass_history": {
+        "shape_before": [
+          21
+        ],
+        "shape_after": [
+          21
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      }
+    },
+    "iterations_before": 21,
+    "iterations_after": 21,
+    "converged_before": true,
+    "converged_after": true,
+    "independent_residual_after": 3.014700424443046e-16,
+    "legacy_gate": true,
+    "solver_residual_before_wall_refresh": 3.014700424443046e-16,
+    "independent_residual_before": 3.014700424443046e-16,
+    "independent_residual_equal": true,
+    "explanation": null,
+    "baseline_npz_sha256": "117ef59b6cf95b6e3ac4e096dc65defd919a3a663849fd7aff155c942feee934",
+    "after_npz_sha256": "117ef59b6cf95b6e3ac4e096dc65defd919a3a663849fd7aff155c942feee934",
+    "byte_identical_npz": true,
+    "durable_archive": "docs/refactor/evidence/smoke_krylov.tar.gz",
+    "artifact": "evaluations/eval_001_F1_1_1/F1_1_1.npz"
+  },
+  "F2_1_1_krylov": {
+    "fields": {
+      "vdf": {
+        "shape_before": [
+          200,
+          200,
+          6
+        ],
+        "shape_after": [
+          200,
+          200,
+          6
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "temp": {
+        "shape_before": [
+          200
+        ],
+        "shape_after": [
+          200
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "qx": {
+        "shape_before": [
+          200
+        ],
+        "shape_after": [
+          200
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "qy": {
+        "shape_before": [
+          200
+        ],
+        "shape_after": [
+          200
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "residual_history": {
+        "shape_before": [
+          23
+        ],
+        "shape_after": [
+          23
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "mass_history": {
+        "shape_before": [
+          23
+        ],
+        "shape_after": [
+          23
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      }
+    },
+    "iterations_before": 23,
+    "iterations_after": 23,
+    "converged_before": true,
+    "converged_after": true,
+    "independent_residual_after": 7.459339569144198e-16,
+    "legacy_gate": true,
+    "solver_residual_before_wall_refresh": 7.459339569144198e-16,
+    "independent_residual_before": 7.459339569144198e-16,
+    "independent_residual_equal": true,
+    "explanation": "Independent evaluator reconstructs reflecting-wall emission from submitted vdf; direct solver diagnostic can retain lagged emission.",
+    "baseline_npz_sha256": "330b00b8b2f0d928896adf2c748ea6976ba0effb8c6bd45b5d73fcbae68eeac2",
+    "after_npz_sha256": "330b00b8b2f0d928896adf2c748ea6976ba0effb8c6bd45b5d73fcbae68eeac2",
+    "byte_identical_npz": true,
+    "durable_archive": "docs/refactor/evidence/smoke_krylov.tar.gz",
+    "artifact": "evaluations/eval_002_F2_1_1/F2_1_1.npz"
+  },
+  "F3_1_1_krylov": {
+    "fields": {
+      "vdf": {
+        "shape_before": [
+          200,
+          200,
+          6
+        ],
+        "shape_after": [
+          200,
+          200,
+          6
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "temp": {
+        "shape_before": [
+          200
+        ],
+        "shape_after": [
+          200
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "qx": {
+        "shape_before": [
+          200
+        ],
+        "shape_after": [
+          200
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "qy": {
+        "shape_before": [
+          200
+        ],
+        "shape_after": [
+          200
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "residual_history": {
+        "shape_before": [
+          27
+        ],
+        "shape_after": [
+          27
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      },
+      "mass_history": {
+        "shape_before": [
+          27
+        ],
+        "shape_after": [
+          27
+        ],
+        "array_equal": true,
+        "max_abs_difference": 0.0
+      }
+    },
+    "iterations_before": 27,
+    "iterations_after": 27,
+    "converged_before": true,
+    "converged_after": true,
+    "independent_residual_after": 1.030301474868524e-15,
+    "legacy_gate": true,
+    "solver_residual_before_wall_refresh": 1.030301474868524e-15,
+    "independent_residual_before": 1.030301474868524e-15,
+    "independent_residual_equal": true,
+    "explanation": null,
+    "baseline_npz_sha256": "1b70e407389218b4571f2072d95d01bae970c35acb9db0311f04435aa56b53b8",
+    "after_npz_sha256": "1b70e407389218b4571f2072d95d01bae970c35acb9db0311f04435aa56b53b8",
+    "byte_identical_npz": true,
+    "durable_archive": "docs/refactor/evidence/smoke_krylov.tar.gz",
+    "artifact": "evaluations/eval_003_F3_1_1/F3_1_1.npz"
+  }
+}

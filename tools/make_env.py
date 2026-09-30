@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Generate a task ``environment/`` from ``solver-python`` plus an ablation spec.
+"""Legacy reproduction only: use a separate baseline checkout, never overwrite frozen fixtures.
+
+Generate a task ``environment/`` from ``solver-python`` plus an ablation spec.
 
 **``environment/`` is generated, never hand-edited.**  Each task declares an
 ``ablation.yaml`` saying what to remove and how to rewrite what is left; this
@@ -15,7 +17,7 @@ fixed properly.
 
 Usage::
 
-    python tools/make_env.py tasks/t01-diffusive-acceleration [--check]
+    python tools/make_env.py tasks/t01-square [--check]
 """
 from __future__ import annotations
 

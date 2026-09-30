@@ -10,10 +10,11 @@ following it, together with the reference sources they were found in.
 
 ---
 
-## 1. GSIS and CIS converge to different discrete fixed points
+## 1. Recorded fixed-point differences in the current GSIS/CIS implementation
 
-**The most important thing on this page — and it is a property of the scheme,
-not a defect in it.**
+**Evidence scope:** the tables describe the shipped implementation and tested cases.
+Causal interpretation and discrete compatibility require further verification;
+these observations do not prove a universal GSIS property or exclude a bug.
 
 The last step of a GSIS iteration blends the synthetic macroscopic solution
 `M*` with the moment `M(f)` of the kinetic solution, under a local damping
@@ -24,14 +25,11 @@ M^{n+1} = beta M*  +  (1 - beta) M(f)
 beta    = min(tau_R/h_l, tau_thr) / (tau_R/h_l)
 ```
 
-At a fixed point that reads `M = beta M* + (1-beta) M(f)`, whereas CIS's fixed
-point is `M = M(f)`. The two coincide only if `beta (M* - M(f)) = 0`. The
-macroscopic system is discretised by HDG and the kinetic one by upwind DG, so
-`M*` is not the discrete moment of the DG solution and the bracket does not
-vanish. **`beta != 0` therefore implies a displaced fixed point, by
-construction.** `beta` is there for stability — it keeps the macroscopic
-solution out of the answer where the local element is optically thin and the
-high-order terms blow up (see #5).
+At a fixed point the blend requires `beta (M* - M(f)) = 0` to satisfy
+CIS's moment consistency condition. The observed discrepancy motivates checking
+the assembled macro/kinetic systems and implementation. Different discretization
+names alone do not prove that this bracket must be nonzero. The damping factor
+and the recorded ballistic observations are retained (see #5).
 
 | | CIS | GSIS |
 |---|---|---|
@@ -42,7 +40,7 @@ high-order terms blow up (see #5).
 `||T_CIS - T_GSIS||_inf / ||T_CIS||_inf = 1.7e-2`. It is non-zero at **every**
 Knudsen number tested, peaking around `tau_R = 1e-1`.
 
-### beta interpolates between the two fixed points
+### Recorded dependence on beta
 
 `tau_R = 1e-1`, 200 elements, `DEG = 3`:
 
@@ -54,11 +52,10 @@ Knudsen number tested, peaking around `tau_R = 1e-1`.
 | 10 | 0.61–1.0 | 57 | 1.97e-02 | 7.9e-03 |
 | 1000 (`beta == 1`) | 1.0 | 91 | 1.98e-02 | 8.5e-03 |
 
-Acceleration and fixed-point fidelity are the **same knob**. Turning `beta`
-down recovers CIS's answer and CIS's cost together; there is no setting that
-gives both.
+In this sampled damping sweep, smaller beta reduced the gap and increased
+iteration cost. This does not exclude other compatible accelerated formulations.
 
-### It does not go away under refinement
+### Recorded refinement study
 
 `tools/fixed_point_study.py`:
 
@@ -68,15 +65,15 @@ gives both.
 | elements = 50, 200, 800 | fixed `tau_R = 1e-1`, `DEG = 3` | 1.66e-2, 1.69e-2, 1.43e-2 |
 | `tau_R` = 1, 1e-1, 1e-2 | fixed discretisation | 1.15e-2, 1.69e-2, 3.72e-3 |
 
-Sixteen times the elements buys 14%. Only reducing `tau_R` closes the gap, as
-the Knudsen layer thins and both schemes approach the same Fourier limit.
+The sampled 16-fold element increase reduced the gap by about 14%.
+These finite observations do not establish an asymptotic refinement result or
+show that changing tau_R is the only way to achieve consistency.
 
 ### What follows
 
-GSIS as shipped is a fast *approximate* solver, not an oracle for the CIS
-answer. Anything that grades one scheme against the other will reject a
-correct implementation. Grade instead against quantities that do not depend on
-which scheme produced them:
+The recorded implementation cannot be treated as a reference for CIS's discrete
+answer without checking the target problem. Correctness should use independently
+computed observables under an explicitly stated protocol:
 
 * the transport residual (`iteration.true_residual: true`) — necessary but,
   at small `Kn`, not sufficient on its own: the operator is ill-conditioned
@@ -93,9 +90,9 @@ by GMRES, one sweep per product, and converges to **source iteration's own
 fixed point** to round-off: transport residual `1e-15`, agreement with CIS
 to `4e-11 .. 1.6e-7` wherever CIS can reach the answer. On the shipped
 square at `tau_R = 1e-2` it takes 228 sweeps against CIS's 16 830; at
-`1e-3`, 992 where CIS does not converge in 200 000. It is not
-Knudsen-independent the way GSIS is, and it does not apply to periodic
-faces. `docs/KRYLOV.md`.
+`1e-3`, 992 where CIS does not converge in 200 000. Its iteration count grows across the sampled Kn values. Periodic faces are
+supported through the extended periodic partner state; unrepresented broken
+sweep cycles still raise. See `KRYLOV.md` and the Krylov tests.
 
 `scheme.defect_omega` is an earlier, experimental repair of GSIS itself
 (`docs/DEFECT_CORRECTION.md`); it also lands on CIS's fixed point but at
@@ -141,8 +138,8 @@ Note that `iteration.true_residual: true` does *not* expose this. For CIS it
 measures the same moment change the iterate residual does (`1.52e-06` against
 `1.52e-06` on the truncated `tau_R = 1e-3` run). What it is for is #1.
 
-The stopping rule is deliberately left as it was: it is the subject of the
-benchmark this solver was ported to support.
+The historical stopping rule is retained for compatibility; new correctness
+and same-accuracy baseline policies await C03/C04.
 
 ## 3. Acceleration variant B diverges
 

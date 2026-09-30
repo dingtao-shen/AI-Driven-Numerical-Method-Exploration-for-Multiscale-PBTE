@@ -1,0 +1,450 @@
+schema_version: 1
+historical_only: true
+groups:
+- id: t01-diffusive-acceleration
+  directory: experiments/results/t01-diffusive-acceleration
+  source_revision: dffff2319b290860b5c4a87509428595bce4d2b0
+  protocol_id_assigned_during_refactor: legacy_precursor_unversioned
+  score_policy: precursor historical gate; cost rule not independently verified
+  verifier_revision_from_notes: null
+  model_alias_from_summary: opus
+  model_exact_id: null
+  model_display_name_from_notes: null
+  scaffold_reported: null
+  isolation_from_summary: dir
+  isolation_security: not_validated
+  summary: experiments/results/t01-diffusive-acceleration/summary.json
+  notes: null
+  trials_as_recorded:
+  - trial: 1
+    score: 1.0
+    cases_passed: 5
+    agent_wall: 2624.373888433998
+    agent_returncode: 0
+    sandbox: /tmp/claude-1000/-home-dtshen-workspace-StiKine-Bench/0e2cf9e0-b33a-4ac4-a336-d0539bbf2557/scratchpad/rollouts/trial_01
+  archives: []
+  voided_files: []
+  empty_transcripts: []
+  missing_metadata_policy: null means unavailable; notes display name is not an exact
+    API model ID
+  known_issues:
+  - No standalone candidate archive or diff is present; transcript may embed code.
+  new_protocol_evidence: false
+  file_manifest: docs/refactor/baseline_manifest.json
+- id: t01-square
+  directory: experiments/results/t01-square
+  source_revision: dffff2319b290860b5c4a87509428595bce4d2b0
+  protocol_id_assigned_during_refactor: legacy_t01_sweep_count
+  score_policy: fine-sweep count
+  verifier_revision_from_notes: null
+  model_alias_from_summary: opus
+  model_exact_id: null
+  model_display_name_from_notes: Claude Opus 5
+  scaffold_reported: Claude Code
+  isolation_from_summary: dir
+  isolation_security: not_validated
+  summary: experiments/results/t01-square/summary.json
+  notes: experiments/results/t01-square/NOTES.md
+  trials_as_recorded:
+  - trial: 1
+    gate: true
+    score: 3293.157291865303
+    families:
+      F1:
+      - true
+      - 3004.006551561395
+      F2:
+      - true
+      - 3610.1402453096316
+    cells_passed: 10
+    cells: 10
+    agent_wall: 6456.380689579004
+    agent_returncode: 0
+    sandbox: /tmp/claude-1000/-home-dtshen-workspace-StiKine-Bench/0e2cf9e0-b33a-4ac4-a336-d0539bbf2557/scratchpad/rollouts_sq/trial_01
+  - trial: 2
+    gate: true
+    score: 989.3039424338059
+    families:
+      F1:
+      - true
+      - 956.6370278770182
+      F2:
+      - true
+      - 1023.0863556338246
+    cells_passed: 10
+    cells: 10
+    agent_wall: 7200.0
+    agent_returncode: -1
+    sandbox: /tmp/claude-1000/-home-dtshen-workspace-StiKine-Bench/0e2cf9e0-b33a-4ac4-a336-d0539bbf2557/scratchpad/rollouts_sq/trial_02
+  - trial: 3
+    gate: true
+    score: 2604.994567272096
+    families:
+      F1:
+      - true
+      - 2423.3751115672826
+      F2:
+      - true
+      - 2800.225463703962
+    cells_passed: 10
+    cells: 10
+    agent_wall: 3656.8591761839925
+    agent_returncode: 0
+    sandbox: /tmp/claude-1000/-home-dtshen-workspace-StiKine-Bench/0e2cf9e0-b33a-4ac4-a336-d0539bbf2557/scratchpad/rollouts_sq/trial_03
+  - trial: 4
+    gate: true
+    score: 2270.9656412648064
+    families:
+      F1:
+      - true
+      - 2108.2650681530536
+      F2:
+      - true
+      - 2446.222261948926
+    cells_passed: 10
+    cells: 10
+    agent_wall: 5448.337965714978
+    agent_returncode: 0
+    sandbox: /tmp/claude-1000/-home-dtshen-workspace-StiKine-Bench/0e2cf9e0-b33a-4ac4-a336-d0539bbf2557/scratchpad/rollouts_sq/trial_04
+  - trial: 5
+    gate: false
+    score: null
+    families:
+      F1:
+      - false
+      - null
+      F2:
+      - false
+      - null
+    cells_passed: 4
+    cells: 10
+    agent_wall: 1000.5398856310057
+    agent_returncode: 1
+    sandbox: /tmp/claude-1000/-home-dtshen-workspace-StiKine-Bench/0e2cf9e0-b33a-4ac4-a336-d0539bbf2557/scratchpad/rollouts_sq/trial_05
+  archives: []
+  voided_files: []
+  empty_transcripts:
+  - experiments/results/t01-square/trial_02_transcript.json
+  missing_metadata_policy: null means unavailable; notes display name is not an exact
+    API model ID
+  known_issues:
+  - Candidate trees lost after reboot; cannot re-score current artifacts.
+  - Trial 5 quota-invalid; trial 2 transcript empty on timeout.
+  new_protocol_evidence: false
+  file_manifest: docs/refactor/baseline_manifest.json
+- id: t01-square-C
+  directory: experiments/results/t01-square-C
+  source_revision: dffff2319b290860b5c4a87509428595bce4d2b0
+  protocol_id_assigned_during_refactor: legacy_t01_sweep_equivalent_initial
+  score_policy: wall / pristine sweep; grading changed to one thread
+  verifier_revision_from_notes: null
+  model_alias_from_summary: null
+  model_exact_id: null
+  model_display_name_from_notes: Claude Opus 5
+  scaffold_reported: Claude Code
+  isolation_from_summary: null
+  isolation_security: not_validated
+  summary: null
+  notes: experiments/results/t01-square-C/NOTES.md
+  trials_as_recorded: null
+  archives:
+  - experiments/results/t01-square-C/trial_01_environment.tar.gz
+  - experiments/results/t01-square-C/trial_02_environment.tar.gz
+  voided_files: []
+  empty_transcripts:
+  - experiments/results/t01-square-C/trial_01_transcript.json
+  missing_metadata_policy: null means unavailable; notes display name is not an exact
+    API model ID
+  known_issues:
+  - No summary.json; stopped after trial 1 and during trial 2.
+  - Trial 1 stale shared library; trial 2 operator-interrupted; trials 3–5 not run.
+  new_protocol_evidence: false
+  file_manifest: docs/refactor/baseline_manifest.json
+- id: t01-square-C2
+  directory: experiments/results/t01-square-C2
+  source_revision: dffff2319b290860b5c4a87509428595bce4d2b0
+  protocol_id_assigned_during_refactor: legacy_t01_own_sweep_unit
+  score_policy: wall / min(own sweep, pristine sweep)
+  verifier_revision_from_notes: a0765ac656c4927f3670ed4b2280adc62f8369d0
+  model_alias_from_summary: opus
+  model_exact_id: null
+  model_display_name_from_notes: Claude Opus 5
+  scaffold_reported: Claude Code
+  isolation_from_summary: dir
+  isolation_security: not_validated
+  summary: experiments/results/t01-square-C2/summary.json
+  notes: experiments/results/t01-square-C2/NOTES.md
+  trials_as_recorded:
+  - trial: 1
+    gate: true
+    score: 547.712802565106
+    families:
+      F1:
+      - true
+      - 520.58813771322
+      F2:
+      - true
+      - 576.2507678555288
+    cells_passed: 10
+    cells: 10
+    agent_wall: 7200.0
+    timed_out: true
+    agent_returncode: -1
+    sandbox: /home/dtshen/rollout-sandboxes/t01-square-C2/trial_01
+  - trial: 2
+    gate: true
+    score: 921.4141623240902
+    families:
+      F1:
+      - true
+      - 958.0790735171192
+      F2:
+      - true
+      - 886.1523876256906
+    cells_passed: 10
+    cells: 10
+    agent_wall: 7200.0
+    timed_out: true
+    agent_returncode: -1
+    sandbox: /home/dtshen/rollout-sandboxes/t01-square-C2/trial_02
+  - trial: 3
+    gate: true
+    score: 973.590101181296
+    families:
+      F1:
+      - true
+      - 910.745022159962
+      F2:
+      - true
+      - 1040.7717440718802
+    cells_passed: 10
+    cells: 10
+    agent_wall: 5030.415049850999
+    timed_out: false
+    agent_returncode: 0
+    sandbox: /home/dtshen/rollout-sandboxes/t01-square-C2/trial_03
+  - trial: 4
+    gate: true
+    score: 861.776482530467
+    families:
+      F1:
+      - true
+      - 788.6936429413472
+      F2:
+      - true
+      - 941.6314084552772
+    cells_passed: 10
+    cells: 10
+    agent_wall: 6598.608050832008
+    timed_out: false
+    agent_returncode: 0
+    sandbox: /home/dtshen/rollout-sandboxes/t01-square-C2/trial_04
+  - trial: 5
+    gate: true
+    score: 576.2710935229649
+    families:
+      F1:
+      - true
+      - 617.924400218897
+      F2:
+      - true
+      - 537.4255703651012
+    cells_passed: 10
+    cells: 10
+    agent_wall: 7200.0
+    timed_out: true
+    agent_returncode: -1
+    sandbox: /home/dtshen/rollout-sandboxes/t01-square-C2/trial_05
+  archives:
+  - experiments/results/t01-square-C2/trial_01_environment.tar.gz
+  - experiments/results/t01-square-C2/trial_02_environment.tar.gz
+  - experiments/results/t01-square-C2/trial_03_environment.tar.gz
+  - experiments/results/t01-square-C2/trial_04_environment.tar.gz
+  - experiments/results/t01-square-C2/trial_05_environment.tar.gz
+  voided_files: []
+  empty_transcripts:
+  - experiments/results/t01-square-C2/trial_01_transcript.json
+  - experiments/results/t01-square-C2/trial_02_transcript.json
+  - experiments/results/t01-square-C2/trial_05_transcript.json
+  missing_metadata_policy: null means unavailable; notes display name is not an exact
+    API model ID
+  known_issues:
+  - Timeout transcripts can be empty; missing usage is null.
+  new_protocol_evidence: false
+  file_manifest: docs/refactor/baseline_manifest.json
+- id: t01-square-F3
+  directory: experiments/results/t01-square-F3
+  source_revision: dffff2319b290860b5c4a87509428595bce4d2b0
+  protocol_id_assigned_during_refactor: legacy_t01_v0_3_2
+  score_policy: wall / min(own sweep, pristine sweep)
+  verifier_revision_from_notes: ac1d315f91dfce394defceb8e5281406397fe496
+  model_alias_from_summary: opus
+  model_exact_id: null
+  model_display_name_from_notes: Claude Opus 5
+  scaffold_reported: Claude Code
+  isolation_from_summary: dir
+  isolation_security: not_validated
+  summary: experiments/results/t01-square-F3/summary.json
+  notes: experiments/results/t01-square-F3/NOTES.md
+  trials_as_recorded:
+  - trial: 1
+    gate: true
+    score: 799.7258768019254
+    families:
+      F1:
+      - true
+      - 781.9700859694017
+      F2:
+      - true
+      - 889.6039565302153
+      F3:
+      - true
+      - 735.2526541224055
+    cells_passed: 15
+    cells: 15
+    agent_wall: 7200.0
+    timed_out: true
+    turns: null
+    cost_usd: null
+    events: 2207
+    agent_returncode: -1
+    sandbox: /home/dtshen/rollout-sandboxes/t01-square-F3/trial_01
+    rescored: true
+  - trial: 2
+    gate: true
+    score: 839.3216444406634
+    families:
+      F1:
+      - true
+      - 834.8354719562246
+      F2:
+      - true
+      - 905.3280906377018
+      F3:
+      - true
+      - 782.3090940305009
+    cells_passed: 15
+    cells: 15
+    agent_wall: 7200.0
+    timed_out: true
+    turns: null
+    cost_usd: null
+    events: 2179
+    agent_returncode: -1
+    sandbox: /home/dtshen/rollout-sandboxes/t01-square-F3/trial_02
+    rescored: true
+  - trial: 3
+    gate: true
+    score: 455.8508189053793
+    families:
+      F1:
+      - true
+      - 434.01366892852616
+      F2:
+      - true
+      - 516.0310092736657
+      F3:
+      - true
+      - 422.94998166389036
+    cells_passed: 15
+    cells: 15
+    agent_wall: 7200.0
+    timed_out: true
+    turns: null
+    cost_usd: null
+    events: 2317
+    agent_returncode: -1
+    sandbox: /home/dtshen/rollout-sandboxes/t01-square-F3/trial_03
+    rescored: true
+  - trial: 4
+    gate: true
+    score: 1156.9523640524053
+    families:
+      F1:
+      - true
+      - 1138.2419071073746
+      F2:
+      - true
+      - 1295.5020464543497
+      F3:
+      - true
+      - 1050.204219785079
+    cells_passed: 15
+    cells: 15
+    agent_wall: 7200.0
+    timed_out: true
+    turns: null
+    cost_usd: null
+    events: 1734
+    agent_returncode: -1
+    voided: null
+    sandbox: /home/dtshen/rollout-sandboxes/t01-square-F3/trial_04
+    rescored: true
+  - trial: 5
+    gate: true
+    score: 1119.365667868796
+    families:
+      F1:
+      - true
+      - 1029.8541167055666
+      F2:
+      - true
+      - 1209.2413654453242
+      F3:
+      - true
+      - 1126.2303927201174
+    cells_passed: 15
+    cells: 15
+    agent_wall: 7200.0
+    timed_out: true
+    turns: null
+    cost_usd: null
+    events: 2794
+    agent_returncode: -1
+    voided: null
+    sandbox: /home/dtshen/rollout-sandboxes/t01-square-F3/trial_05
+    rescored: true
+  archives:
+  - experiments/results/t01-square-F3/trial_01_environment.tar.gz
+  - experiments/results/t01-square-F3/trial_02_environment.tar.gz
+  - experiments/results/t01-square-F3/trial_03_environment.tar.gz
+  - experiments/results/t01-square-F3/trial_04_environment.tar.gz
+  - experiments/results/t01-square-F3/trial_05_environment.tar.gz
+  voided_files:
+  - experiments/results/t01-square-F3/voided/trial_04_meta.json
+  - experiments/results/t01-square-F3/voided/trial_04_score.json
+  - experiments/results/t01-square-F3/voided/trial_04_transcript.jsonl
+  - experiments/results/t01-square-F3/voided/trial_05_meta.json
+  - experiments/results/t01-square-F3/voided/trial_05_score.json
+  - experiments/results/t01-square-F3/voided/trial_05_transcript.jsonl
+  empty_transcripts: []
+  missing_metadata_policy: null means unavailable; notes display name is not an exact
+    API model ID
+  known_issues:
+  - Two originals (trials 4 and 5) retained under voided/; summary lists only replacements.
+  - v0.3.0 periodic warm-up and v0.3.1 cache timing faults described in NOTES.
+  - Earlier score files overwritten historically; current tree is not a complete score-version
+    archive.
+  new_protocol_evidence: false
+  file_manifest: docs/refactor/baseline_manifest.json
+solver_research_json:
+- path: solver-python/docs/benchmark.json
+  sha256: 9169029e88ce15d1661dd4d55ef812bb708f3109cab0fcf29ca74439efd32d14
+  role: solver diagnostic evidence; not agent ranking
+- path: solver-python/docs/budgets.json
+  sha256: ca632d2f4860cc4d6ca9c689e0d711120162bfa10088710000dc980057a4a4ae
+  role: solver diagnostic evidence; not agent ranking
+- path: solver-python/docs/fixed_point_study.json
+  sha256: 38343a6b362acc20a65c76b5347accd1959c9c1fe06f2cd236533e77dd3eeb5a
+  role: solver diagnostic evidence; not agent ranking
+- path: solver-python/docs/validation_sweep.json
+  sha256: d6b70229f12cc52ab478e7727dd47ff420e736ae0397a717d36c53021a631f20
+  role: solver diagnostic evidence; not agent ranking
+reference_certification:
+  index: tasks/t01-square/reference/index.json
+  not_cross_checked_with_cis:
+  - F1_1e-3
+  - F2_1e-2
+  - F2_1e-3
+  - F3_1e-2
+  - F3_1e-3
