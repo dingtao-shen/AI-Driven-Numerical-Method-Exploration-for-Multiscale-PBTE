@@ -1,4 +1,4 @@
-# StiffKinetic-Bench (v0)
+# Archive
 
 A benchmark for AI coding agents on a problem class no existing PDE-agent
 benchmark covers: **iterative robustness in stiff kinetic transport**.
